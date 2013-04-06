@@ -41,17 +41,21 @@ public abstract class TDisruptorServer extends TNonblockingServer
 {
     private static final Logger logger = LoggerFactory.getLogger(TDisruptorServer.class);
 
-    // setting this to 1/4 of available CPUs because we just want to split the iterative work (accept, put-to-ring)
-    private static final int NUM_SELECTORS = Runtime.getRuntime().availableProcessors() / 4;
-
     public static class Args extends AbstractNonblockingServer.AbstractNonblockingServerArgs<Args>
     {
-        private int numWorkers, ringSize;
+        private Integer numSelectors, numWorkers, ringSize;
         private ExecutorService invoker;
 
         public Args(TNonblockingServerTransport transport)
         {
             super(transport);
+        }
+
+        @SuppressWarnings("unused")
+        public Args numSelectors(int numSelectors)
+        {
+            this.numSelectors = numSelectors;
+            return this;
         }
 
         @SuppressWarnings("unused")
@@ -76,7 +80,7 @@ public abstract class TDisruptorServer extends TNonblockingServer
         }
     }
 
-    private final SelectorThread[] selectorThread = new SelectorThread[4];
+    private final SelectorThread[] selectorThreads;
     private final ExecutorService invoker;
 
     private volatile boolean stopped;
@@ -85,19 +89,39 @@ public abstract class TDisruptorServer extends TNonblockingServer
     {
         super(args);
 
+        final int numCores = Runtime.getRuntime().availableProcessors();
+
+        // by default, setting selectors to 1/4 of available CPUs
+        // because we just want to split the iterative work (accept, put-to-ring)
+        final int numSelectors = (args.numSelectors == null)
+                                   ? numCores / 4
+                                   : args.numSelectors;
+
+        // by default, setting number of workers to match number of available CPUs
+        final int numWorkers = (args.numWorkers == null)
+                                   ? numCores
+                                   : args.numWorkers;
+
+        // by default, setting size of the ring buffer so each worker has 1024 slots available,
+        // rounded to the nearest power 2 (as requirement of Disruptor).
+        final int ringSize = (args.ringSize == null)
+                                   ? nearestPowerOf2(1024 * numCores)
+                                   : args.ringSize;
+
+
         invoker = (args.invoker == null)
-                    ? Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors())
+                    ? Executors.newFixedThreadPool(numCores)
                     : args.invoker;
 
-        RingBuffer<MessageEvent> ringBuffer = RingBuffer.createMultiProducer(MessageEvent.FACTORY, args.ringSize, new YieldingWaitStrategy());
+        RingBuffer<MessageEvent> ringBuffer = RingBuffer.createMultiProducer(MessageEvent.FACTORY, ringSize, new YieldingWaitStrategy());
 
         ThriftFactories thriftFactories = new ThriftFactories(inputTransportFactory_, outputTransportFactory_,
                                                               inputProtocolFactory_,  outputProtocolFactory_,
                                                               processorFactory_);
 
-        MessageHandler handlers[] = new MessageHandler[args.numWorkers];
+        MessageHandler handlers[] = new MessageHandler[numWorkers];
 
-        for (int i = 0; i < args.numWorkers; i++)
+        for (int i = 0; i < numWorkers; i++)
             handlers[i] = new MessageHandler();
 
         WorkerPool<MessageEvent> workers = new WorkerPool<>(ringBuffer,
@@ -105,15 +129,18 @@ public abstract class TDisruptorServer extends TNonblockingServer
                                                             new FatalExceptionHandler(),
                                                             handlers);
 
-        workers.start(Executors.newFixedThreadPool(args.numWorkers));
+        workers.start(Executors.newFixedThreadPool(numWorkers));
 
         try
         {
-            for (int i = 0; i < NUM_SELECTORS; i++)
+            selectorThreads = new SelectorThread[numSelectors];
+
+            for (int i = 0; i < numSelectors; i++)
             {
-                this.selectorThread[i] = new SelectorThread(ringBuffer,
-                                                            (TNonblockingServerTransport) serverTransport_,
-                                                            thriftFactories);
+                selectorThreads[i] = new SelectorThread("Thrift-Selector_" + i,
+                                                        ringBuffer,
+                                                        (TNonblockingServerTransport) serverTransport_,
+                                                        thriftFactories);
             }
         }
         catch (IOException e)
@@ -127,10 +154,10 @@ public abstract class TDisruptorServer extends TNonblockingServer
     protected boolean startThreads()
     {
         stopped = false;
-        for (int i = 0; i < NUM_SELECTORS; i++)
+        for (int i = 0; i < selectorThreads.length; i++)
         {
-            selectorThread[i].start(); // start the selector
-            logger.info("Selector {} is started.", i);
+            selectorThreads[i].start(); // start the selector
+            logger.debug("Thrift Selector thread {} is started.", i);
         }
         return true;
     }
@@ -150,8 +177,8 @@ public abstract class TDisruptorServer extends TNonblockingServer
     {
         try
         {
-            for (int i = 0; i < NUM_SELECTORS; i++)
-                selectorThread[i].join(); // wait until the selector thread exits
+            for (int i = 0; i < selectorThreads.length; i++)
+                selectorThreads[i].join(); // wait until the selector thread exits
         }
         catch (InterruptedException e)
         {
@@ -193,16 +220,16 @@ public abstract class TDisruptorServer extends TNonblockingServer
     {
         stopped = true;
 
-        for (int i = 0; i < NUM_SELECTORS; i++)
-            selectorThread[i].wakeupSelector();
+        for (int i = 0; i < selectorThreads.length; i++)
+            selectorThreads[i].wakeupSelector();
     }
 
     @Override
     public boolean isStopped()
     {
-        for (int i = 0; i < NUM_SELECTORS; i++)
+        for (int i = 0; i < selectorThreads.length; i++)
         {
-            if (!selectorThread[i].isStopped())
+            if (!selectorThreads[i].isStopped())
                 return false;
         }
 
@@ -236,7 +263,6 @@ public abstract class TDisruptorServer extends TNonblockingServer
         });
     }
 
-    // TODO: make selector threads named (or at least numbered) for better logging
     protected class SelectorThread extends SelectAcceptThread
     {
         private final RingBuffer<MessageEvent> ringBuffer;
@@ -246,11 +272,14 @@ public abstract class TDisruptorServer extends TNonblockingServer
          * Set up the thread that will handle the non-blocking accepts, reads, and
          * writes.
          */
-        public SelectorThread(RingBuffer<MessageEvent> ringBuffer,
+        public SelectorThread(String name,
+                              RingBuffer<MessageEvent> ringBuffer,
                               TNonblockingServerTransport serverTransport,
                               ThriftFactories thriftFactories) throws IOException
         {
             super(serverTransport);
+
+            setName(name);
 
             this.ringBuffer = ringBuffer;
             this.thriftFactories = thriftFactories;
@@ -300,7 +329,8 @@ public abstract class TDisruptorServer extends TNonblockingServer
                     selectedKeys.remove();
 
                     // skip if not valid
-                    if (!key.isValid()) {
+                    if (!key.isValid())
+                    {
                         cleanupSelectionKey(key);
                         continue;
                     }
@@ -466,6 +496,19 @@ public abstract class TDisruptorServer extends TNonblockingServer
             // cancel the selection key (aka close connection)
             key.cancel();
         }
+    }
+
+    private static int nearestPowerOf2(int v)
+    {
+        v--;
+        v |= v >> 1;
+        v |= v >> 2;
+        v |= v >> 4;
+        v |= v >> 8;
+        v |= v >> 16;
+        v++;
+
+        return v;
     }
 }
 
