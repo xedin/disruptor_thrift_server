@@ -24,7 +24,7 @@ import org.apache.thrift.TException;
 import org.apache.thrift.transport.TTransport;
 import org.apache.thrift.transport.TTransportException;
 
-public final class TMemoryInputTransport extends TTransport
+final class TMemoryInputTransport extends TTransport
 {
     private ByteBuffer buffer;
     private int position, limit;
@@ -38,7 +38,9 @@ public final class TMemoryInputTransport extends TTransport
 
     @Override
     public void close()
-    {}
+    {
+        // MessageFrameBuffer takes care of freeing buffer space once connection is closed
+    }
 
     @Override
     public boolean isOpen()

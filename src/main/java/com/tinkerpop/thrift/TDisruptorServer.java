@@ -31,6 +31,7 @@ import org.slf4j.LoggerFactory;
 
 import com.lmax.disruptor.*;
 import com.tinkerpop.thrift.util.MessageFrameBuffer;
+import com.tinkerpop.thrift.util.TBinaryProtocol;
 import org.apache.thrift.TProcessorFactory;
 import org.apache.thrift.protocol.TProtocolFactory;
 import org.apache.thrift.server.AbstractNonblockingServer;
@@ -108,6 +109,9 @@ public abstract class TDisruptorServer extends TNonblockingServer
                                    ? nearestPowerOf2(1024 * numCores)
                                    : args.ringSize;
 
+        // unfortunate fact that Thrift transports still rely on byte arrays forces us to do this :(
+        if (!(inputProtocolFactory_ instanceof TBinaryProtocol.Factory) || !(outputProtocolFactory_ instanceof TBinaryProtocol.Factory))
+            throw new IllegalArgumentException("Please use " + TBinaryProtocol.class.getCanonicalName() + " or it's subclass as protocol factories.");
 
         invoker = (args.invoker == null)
                     ? Executors.newFixedThreadPool(numCores)
