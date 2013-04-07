@@ -36,7 +36,10 @@ import org.apache.thrift.TProcessorFactory;
 import org.apache.thrift.protocol.TProtocolFactory;
 import org.apache.thrift.server.AbstractNonblockingServer;
 import org.apache.thrift.server.TNonblockingServer;
-import org.apache.thrift.transport.*;
+import org.apache.thrift.transport.TNonblockingServerTransport;
+import org.apache.thrift.transport.TNonblockingTransport;
+import org.apache.thrift.transport.TTransportException;
+import org.apache.thrift.transport.TTransportFactory;
 
 public abstract class TDisruptorServer extends TNonblockingServer
 {

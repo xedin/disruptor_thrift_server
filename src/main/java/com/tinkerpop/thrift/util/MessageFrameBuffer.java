@@ -28,7 +28,9 @@ import org.slf4j.LoggerFactory;
 import com.tinkerpop.thrift.TDisruptorServer;
 import org.apache.thrift.TException;
 import org.apache.thrift.protocol.TProtocol;
-import org.apache.thrift.transport.*;
+import org.apache.thrift.transport.TIOStreamTransport;
+import org.apache.thrift.transport.TNonblockingTransport;
+import org.apache.thrift.transport.TTransport;
 
 /**
  * Possible states for the MessageFrameBuffer state machine.

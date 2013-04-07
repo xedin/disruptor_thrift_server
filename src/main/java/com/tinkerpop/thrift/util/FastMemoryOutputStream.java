@@ -17,7 +17,10 @@
 
 package com.tinkerpop.thrift.util;
 
-import java.io.*;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 
 import com.sun.jna.Pointer;

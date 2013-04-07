@@ -17,12 +17,12 @@
  */
 package com.tinkerpop.thrift.util;
 
-import com.sun.jna.Pointer;
-import sun.misc.Unsafe;
-
 import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
+
+import com.sun.jna.Pointer;
+import sun.misc.Unsafe;
 
 /**
  * An off-heap region of memory that must be manually free'd when no longer needed.
