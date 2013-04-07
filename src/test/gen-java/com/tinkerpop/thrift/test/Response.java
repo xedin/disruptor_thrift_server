@@ -33,8 +33,9 @@ import org.slf4j.LoggerFactory;
 public class Response implements org.apache.thrift.TBase<Response, Response._Fields>, java.io.Serializable, Cloneable {
   private static final org.apache.thrift.protocol.TStruct STRUCT_DESC = new org.apache.thrift.protocol.TStruct("Response");
 
-  private static final org.apache.thrift.protocol.TField RESULT_FIELD_DESC = new org.apache.thrift.protocol.TField("result", org.apache.thrift.protocol.TType.STRING, (short)1);
-  private static final org.apache.thrift.protocol.TField RES_TYPE_FIELD_DESC = new org.apache.thrift.protocol.TField("resType", org.apache.thrift.protocol.TType.I32, (short)2);
+  private static final org.apache.thrift.protocol.TField ID_FIELD_DESC = new org.apache.thrift.protocol.TField("id", org.apache.thrift.protocol.TType.I32, (short)1);
+  private static final org.apache.thrift.protocol.TField RESULT_FIELD_DESC = new org.apache.thrift.protocol.TField("result", org.apache.thrift.protocol.TType.STRING, (short)2);
+  private static final org.apache.thrift.protocol.TField RES_TYPE_FIELD_DESC = new org.apache.thrift.protocol.TField("resType", org.apache.thrift.protocol.TType.I32, (short)3);
 
   private static final Map<Class<? extends IScheme>, SchemeFactory> schemes = new HashMap<Class<? extends IScheme>, SchemeFactory>();
   static {
@@ -42,6 +43,7 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
     schemes.put(TupleScheme.class, new ResponseTupleSchemeFactory());
   }
 
+  public int id; // required
   public ByteBuffer result; // required
   /**
    * 
@@ -51,12 +53,13 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
 
   /** The set of fields this struct contains, along with convenience methods for finding and manipulating them. */
   public enum _Fields implements org.apache.thrift.TFieldIdEnum {
-    RESULT((short)1, "result"),
+    ID((short)1, "id"),
+    RESULT((short)2, "result"),
     /**
      * 
      * @see ArgType
      */
-    RES_TYPE((short)2, "resType");
+    RES_TYPE((short)3, "resType");
 
     private static final Map<String, _Fields> byName = new HashMap<String, _Fields>();
 
@@ -71,9 +74,11 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
      */
     public static _Fields findByThriftId(int fieldId) {
       switch(fieldId) {
-        case 1: // RESULT
+        case 1: // ID
+          return ID;
+        case 2: // RESULT
           return RESULT;
-        case 2: // RES_TYPE
+        case 3: // RES_TYPE
           return RES_TYPE;
         default:
           return null;
@@ -115,9 +120,13 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
   }
 
   // isset id assignments
+  private static final int __ID_ISSET_ID = 0;
+  private byte __isset_bitfield = 0;
   public static final Map<_Fields, org.apache.thrift.meta_data.FieldMetaData> metaDataMap;
   static {
     Map<_Fields, org.apache.thrift.meta_data.FieldMetaData> tmpMap = new EnumMap<_Fields, org.apache.thrift.meta_data.FieldMetaData>(_Fields.class);
+    tmpMap.put(_Fields.ID, new org.apache.thrift.meta_data.FieldMetaData("id", org.apache.thrift.TFieldRequirementType.DEFAULT, 
+        new org.apache.thrift.meta_data.FieldValueMetaData(org.apache.thrift.protocol.TType.I32)));
     tmpMap.put(_Fields.RESULT, new org.apache.thrift.meta_data.FieldMetaData("result", org.apache.thrift.TFieldRequirementType.DEFAULT, 
         new org.apache.thrift.meta_data.FieldValueMetaData(org.apache.thrift.protocol.TType.STRING        , true)));
     tmpMap.put(_Fields.RES_TYPE, new org.apache.thrift.meta_data.FieldMetaData("resType", org.apache.thrift.TFieldRequirementType.DEFAULT, 
@@ -130,10 +139,13 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
   }
 
   public Response(
+    int id,
     ByteBuffer result,
     ArgType resType)
   {
     this();
+    this.id = id;
+    setIdIsSet(true);
     this.result = result;
     this.resType = resType;
   }
@@ -142,6 +154,8 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
    * Performs a deep copy on <i>other</i>.
    */
   public Response(Response other) {
+    __isset_bitfield = other.__isset_bitfield;
+    this.id = other.id;
     if (other.isSetResult()) {
       this.result = org.apache.thrift.TBaseHelper.copyBinary(other.result);
 ;
@@ -157,8 +171,33 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
 
   @Override
   public void clear() {
+    setIdIsSet(false);
+    this.id = 0;
     this.result = null;
     this.resType = null;
+  }
+
+  public int getId() {
+    return this.id;
+  }
+
+  public Response setId(int id) {
+    this.id = id;
+    setIdIsSet(true);
+    return this;
+  }
+
+  public void unsetId() {
+    __isset_bitfield = EncodingUtils.clearBit(__isset_bitfield, __ID_ISSET_ID);
+  }
+
+  /** Returns true if field id is set (has been assigned a value) and false otherwise */
+  public boolean isSetId() {
+    return EncodingUtils.testBit(__isset_bitfield, __ID_ISSET_ID);
+  }
+
+  public void setIdIsSet(boolean value) {
+    __isset_bitfield = EncodingUtils.setBit(__isset_bitfield, __ID_ISSET_ID, value);
   }
 
   public byte[] getResult() {
@@ -229,6 +268,14 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
 
   public void setFieldValue(_Fields field, Object value) {
     switch (field) {
+    case ID:
+      if (value == null) {
+        unsetId();
+      } else {
+        setId((Integer)value);
+      }
+      break;
+
     case RESULT:
       if (value == null) {
         unsetResult();
@@ -250,6 +297,9 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
 
   public Object getFieldValue(_Fields field) {
     switch (field) {
+    case ID:
+      return Integer.valueOf(getId());
+
     case RESULT:
       return getResult();
 
@@ -267,6 +317,8 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
     }
 
     switch (field) {
+    case ID:
+      return isSetId();
     case RESULT:
       return isSetResult();
     case RES_TYPE:
@@ -287,6 +339,15 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
   public boolean equals(Response that) {
     if (that == null)
       return false;
+
+    boolean this_present_id = true;
+    boolean that_present_id = true;
+    if (this_present_id || that_present_id) {
+      if (!(this_present_id && that_present_id))
+        return false;
+      if (this.id != that.id)
+        return false;
+    }
 
     boolean this_present_result = true && this.isSetResult();
     boolean that_present_result = true && that.isSetResult();
@@ -322,6 +383,16 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
     int lastComparison = 0;
     Response typedOther = (Response)other;
 
+    lastComparison = Boolean.valueOf(isSetId()).compareTo(typedOther.isSetId());
+    if (lastComparison != 0) {
+      return lastComparison;
+    }
+    if (isSetId()) {
+      lastComparison = org.apache.thrift.TBaseHelper.compareTo(this.id, typedOther.id);
+      if (lastComparison != 0) {
+        return lastComparison;
+      }
+    }
     lastComparison = Boolean.valueOf(isSetResult()).compareTo(typedOther.isSetResult());
     if (lastComparison != 0) {
       return lastComparison;
@@ -362,6 +433,10 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
     StringBuilder sb = new StringBuilder("Response(");
     boolean first = true;
 
+    sb.append("id:");
+    sb.append(this.id);
+    first = false;
+    if (!first) sb.append(", ");
     sb.append("result:");
     if (this.result == null) {
       sb.append("null");
@@ -396,6 +471,8 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
 
   private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, ClassNotFoundException {
     try {
+      // it doesn't seem like you should have to do this, but java serialization is wacky, and doesn't call the default constructor.
+      __isset_bitfield = 0;
       read(new org.apache.thrift.protocol.TCompactProtocol(new org.apache.thrift.transport.TIOStreamTransport(in)));
     } catch (org.apache.thrift.TException te) {
       throw new java.io.IOException(te);
@@ -420,7 +497,15 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
           break;
         }
         switch (schemeField.id) {
-          case 1: // RESULT
+          case 1: // ID
+            if (schemeField.type == org.apache.thrift.protocol.TType.I32) {
+              struct.id = iprot.readI32();
+              struct.setIdIsSet(true);
+            } else { 
+              org.apache.thrift.protocol.TProtocolUtil.skip(iprot, schemeField.type);
+            }
+            break;
+          case 2: // RESULT
             if (schemeField.type == org.apache.thrift.protocol.TType.STRING) {
               struct.result = iprot.readBinary();
               struct.setResultIsSet(true);
@@ -428,7 +513,7 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
               org.apache.thrift.protocol.TProtocolUtil.skip(iprot, schemeField.type);
             }
             break;
-          case 2: // RES_TYPE
+          case 3: // RES_TYPE
             if (schemeField.type == org.apache.thrift.protocol.TType.I32) {
               struct.resType = ArgType.findByValue(iprot.readI32());
               struct.setResTypeIsSet(true);
@@ -451,6 +536,9 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
       struct.validate();
 
       oprot.writeStructBegin(STRUCT_DESC);
+      oprot.writeFieldBegin(ID_FIELD_DESC);
+      oprot.writeI32(struct.id);
+      oprot.writeFieldEnd();
       if (struct.result != null) {
         oprot.writeFieldBegin(RESULT_FIELD_DESC);
         oprot.writeBinary(struct.result);
@@ -479,13 +567,19 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
     public void write(org.apache.thrift.protocol.TProtocol prot, Response struct) throws org.apache.thrift.TException {
       TTupleProtocol oprot = (TTupleProtocol) prot;
       BitSet optionals = new BitSet();
-      if (struct.isSetResult()) {
+      if (struct.isSetId()) {
         optionals.set(0);
       }
-      if (struct.isSetResType()) {
+      if (struct.isSetResult()) {
         optionals.set(1);
       }
-      oprot.writeBitSet(optionals, 2);
+      if (struct.isSetResType()) {
+        optionals.set(2);
+      }
+      oprot.writeBitSet(optionals, 3);
+      if (struct.isSetId()) {
+        oprot.writeI32(struct.id);
+      }
       if (struct.isSetResult()) {
         oprot.writeBinary(struct.result);
       }
@@ -497,12 +591,16 @@ public class Response implements org.apache.thrift.TBase<Response, Response._Fie
     @Override
     public void read(org.apache.thrift.protocol.TProtocol prot, Response struct) throws org.apache.thrift.TException {
       TTupleProtocol iprot = (TTupleProtocol) prot;
-      BitSet incoming = iprot.readBitSet(2);
+      BitSet incoming = iprot.readBitSet(3);
       if (incoming.get(0)) {
+        struct.id = iprot.readI32();
+        struct.setIdIsSet(true);
+      }
+      if (incoming.get(1)) {
         struct.result = iprot.readBinary();
         struct.setResultIsSet(true);
       }
-      if (incoming.get(1)) {
+      if (incoming.get(2)) {
         struct.resType = ArgType.findByValue(iprot.readI32());
         struct.setResTypeIsSet(true);
       }

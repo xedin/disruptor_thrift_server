@@ -176,6 +176,8 @@
                     <version>2.11</version>
                     <configuration>
                         <runOrder>random</runOrder>
+                        <argLine>-Xms256m -Xmx1024m</argLine>
+                        <forkMode>always</forkMode>
                     </configuration>
                 </plugin>
             </plugins>

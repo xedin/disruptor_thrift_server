@@ -21,8 +21,9 @@ struct Request {
 }
 
 struct Response {
-  1: binary result;
-  2: ArgType resType;
+  1: i32 id;
+  2: binary result;
+  3: ArgType resType;
 }
 
 service TestService {
