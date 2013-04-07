@@ -143,7 +143,6 @@
                 <configuration>
                     <attach>false</attach>
                     <descriptors>
-                        <descriptor>src/assembly/standalone.xml</descriptor>
                         <descriptor>src/assembly/distribution.xml</descriptor>
                     </descriptors>
                     <finalName>disruptor-${project.artifactId}-${project.version}</finalName>
