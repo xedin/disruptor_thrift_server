@@ -18,7 +18,13 @@
  */
 package com.tinkerpop.thrift;
 
-import java.util.Random;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import com.tinkerpop.thrift.test.TestService;
 import org.apache.thrift.transport.TTransport;
@@ -32,7 +38,6 @@ public class MultiRequestTest extends AbstractDisruptorTest
     @Test
     public void multiRequestTest() throws Exception
     {
-        Random random = new Random();
         TTransport transport = getNewTransport();
 
         try
@@ -40,10 +45,58 @@ public class MultiRequestTest extends AbstractDisruptorTest
             TestService.Client client = getNewClient(transport);
 
             for (int i = 0; i < REQUESTS; i += 4)
-                invokeRequests(client, i, random.nextInt(5000), random.nextInt(50000));
+                invokeRequests(client, i, getRandomArgument(), getRandomArgument());
         }
         finally
         {
+            transport.close();
+        }
+    }
+
+    @Test
+    public void concurrentMultiRequestTest() throws Exception
+    {
+        final ExecutorService service = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+
+        TTransport transport = getNewTransport();
+
+        try
+        {
+            final TestService.Client client = getNewClient(transport);
+            final AtomicInteger id = new AtomicInteger(0);
+
+            final Lock lock = new ReentrantLock();
+            final CountDownLatch latch = new CountDownLatch(REQUESTS);
+
+            for (int i = 0; i < REQUESTS; i++)
+            {
+                service.submit(new Callable<Object>()
+                {
+                    @Override
+                    public Object call() throws Exception
+                    {
+                        lock.lock();
+
+                        try
+                        {
+                            invokeRequests(client, id.incrementAndGet(), getRandomArgument(), getRandomArgument());
+                        }
+                        finally
+                        {
+                            lock.unlock();
+                        }
+
+                        latch.countDown();
+                        return null;
+                    }
+                });
+            }
+
+            latch.await();
+        }
+        finally
+        {
+            service.shutdown();
             transport.close();
         }
     }

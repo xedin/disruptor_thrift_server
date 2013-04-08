@@ -60,7 +60,7 @@ public class MultiConnectionTest extends AbstractDisruptorTest
 
                     TestService.Client client = getNewClient(transport);
 
-                    invokeRequests(client, id, id, id);
+                    invokeRequests(client, id, getRandomArgument(), getRandomArgument());
                     client.ping();
 
                     latch.countDown();
@@ -71,6 +71,8 @@ public class MultiConnectionTest extends AbstractDisruptorTest
         }
 
         latch.await();
+
+        service.shutdown();
 
         for (int i = 0; i < CONNECTIONS; i++)
             transports.get(i).close();

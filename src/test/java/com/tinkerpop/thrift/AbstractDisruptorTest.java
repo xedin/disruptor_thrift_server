@@ -22,6 +22,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
+import java.util.Random;
 
 import com.tinkerpop.thrift.test.*;
 import com.tinkerpop.thrift.util.MessageFrameBuffer;
@@ -39,6 +40,7 @@ import static org.junit.Assert.assertNull;
 public class AbstractDisruptorTest
 {
     private static TServer TEST_SERVICE;
+    private static final Random RANDOM = new Random();
 
     protected static final String HOST;
     protected static final int SERVER_PORT = 9161;
@@ -224,5 +226,11 @@ public class AbstractDisruptorTest
     protected static int toInteger(ByteBuffer buffer)
     {
         return buffer.getInt();
+    }
+
+    protected static int getRandomArgument()
+    {
+        int n = RANDOM.nextInt(50000);
+        return n == 0 ? 1 : n;
     }
 }
