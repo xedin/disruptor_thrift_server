@@ -40,7 +40,7 @@ public class TBinaryProtocol extends org.apache.thrift.protocol.TBinaryProtocol
     private final TMemoryInputTransport inMemoryTransport;
 
     @SuppressWarnings("unused")
-    public TBinaryProtocol(TTransport trans, int readLength)
+    public TBinaryProtocol(TMemoryInputTransport trans, int readLength)
     {
         this(trans, false, true);
 
@@ -48,13 +48,10 @@ public class TBinaryProtocol extends org.apache.thrift.protocol.TBinaryProtocol
             setReadLength(readLength);
     }
 
-    public TBinaryProtocol(TTransport trans, boolean strictRead, boolean strictWrite)
+    public TBinaryProtocol(TMemoryInputTransport trans, boolean strictRead, boolean strictWrite)
     {
         super(trans, strictRead, strictWrite);
-
-        inMemoryTransport = (trans instanceof TMemoryInputTransport)
-                             ? (TMemoryInputTransport) trans
-                             : null;
+        inMemoryTransport = trans;
     }
 
     @SuppressWarnings("unused")
@@ -75,16 +72,11 @@ public class TBinaryProtocol extends org.apache.thrift.protocol.TBinaryProtocol
             super(strictRead, strictWrite, readLength);
         }
 
-        public TProtocol getProtocol(TTransport trans)
+        public TProtocol getProtocol(TTransport transport)
         {
-            TBinaryProtocol protocol = new TBinaryProtocol(trans, strictRead_, strictWrite_);
-
-            if (readLength_ != 0)
-            {
-                protocol.setReadLength(readLength_);
-            }
-
-            return protocol;
+            return (transport instanceof TMemoryInputTransport)
+                     ? new TBinaryProtocol((TMemoryInputTransport) transport, strictRead_, strictWrite_)
+                     : super.getProtocol(transport);
         }
     }
 
@@ -113,57 +105,36 @@ public class TBinaryProtocol extends org.apache.thrift.protocol.TBinaryProtocol
 
     public byte readByte() throws TException
     {
-        if (inMemoryTransport == null)
-            return super.readByte();
-
         return inMemoryTransport.readByte();
     }
 
     public short readI16() throws TException
     {
-        if (inMemoryTransport == null)
-            return super.readI16();
-
         return inMemoryTransport.readShort();
     }
 
     public int readI32() throws TException
     {
-        if (inMemoryTransport == null)
-            return super.readI32();
-
         return inMemoryTransport.readInt();
     }
 
     public long readI64() throws TException
     {
-        if (inMemoryTransport == null)
-            return super.readI64();
-
         return inMemoryTransport.readLong();
     }
 
     public double readDouble() throws TException
     {
-        if (inMemoryTransport == null)
-            return super.readDouble();
-
         return inMemoryTransport.readDouble();
     }
 
     public String readString() throws TException
     {
-        if (inMemoryTransport == null)
-            return super.readString();
-
         return readStringBody(readI32());
     }
 
     public String readStringBody(int size) throws TException
     {
-        if (inMemoryTransport == null)
-            return super.readStringBody(size);
-
         checkReadLength(size);
 
         byte[] str = new byte[size];
@@ -181,9 +152,6 @@ public class TBinaryProtocol extends org.apache.thrift.protocol.TBinaryProtocol
 
     public ByteBuffer readBinary() throws TException
     {
-        if (inMemoryTransport == null)
-            return super.readBinary();
-
         int size = readI32();
         checkReadLength(size);
         return inMemoryTransport.readBytes(size);

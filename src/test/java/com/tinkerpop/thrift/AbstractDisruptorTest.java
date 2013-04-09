@@ -23,6 +23,8 @@ import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.Random;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
 
 import com.tinkerpop.thrift.test.*;
 import com.tinkerpop.thrift.util.MessageFrameBuffer;
@@ -102,37 +104,15 @@ public class AbstractDisruptorTest
 
     protected void invokeRequests(TestService.Client client, int startId, int arg1, int arg2) throws TException
     {
-        ByteBuffer rawArg1 = toByteBuffer(arg1);
-        ByteBuffer rawArg2 = toByteBuffer(arg2);
+        Response responseAdd = client.invoke(getRequest(startId + 0, arg1, arg2, OperationType.ADD));
+        Response responseSub = client.invoke(getRequest(startId + 1, arg1, arg2, OperationType.SUB));
+        Response responseMul = client.invoke(getRequest(startId + 2, arg1, arg2, OperationType.MUL));
+        Response responseDiv = client.invoke(getRequest(startId + 3, arg1, arg2, OperationType.DIV));
 
-        Response responseAdd = client.invoke(new Request().setId(startId)
-                                                          .setArg1(rawArg1.duplicate())
-                                                          .setArg2(rawArg2.duplicate())
-                                                          .setArgType(ArgType.INT)
-                                                          .setOperationType(OperationType.ADD));
-
-        Response responseSub = client.invoke(new Request().setId(startId + 1)
-                                                          .setArg1(rawArg1.duplicate())
-                                                          .setArg2(rawArg2.duplicate())
-                                                          .setArgType(ArgType.INT)
-                                                          .setOperationType(OperationType.SUB));
-
-        Response responseMul = client.invoke(new Request().setId(startId + 2)
-                                                          .setArg1(rawArg1.duplicate())
-                                                          .setArg2(rawArg2.duplicate())
-                                                          .setArgType(ArgType.INT)
-                                                          .setOperationType(OperationType.MUL));
-
-        Response responseDiv = client.invoke(new Request().setId(startId + 3)
-                                                          .setArg1(rawArg1.duplicate())
-                                                          .setArg2(rawArg2.duplicate())
-                                                          .setArgType(ArgType.INT)
-                                                          .setOperationType(OperationType.DIV));
-
-        int resultAdd = toInteger(ByteBuffer.wrap(responseAdd.getResult()));
-        int resultSub = toInteger(ByteBuffer.wrap(responseSub.getResult()));
-        int resultMul = toInteger(ByteBuffer.wrap(responseMul.getResult()));
-        int resultDiv = toInteger(ByteBuffer.wrap(responseDiv.getResult()));
+        int resultAdd = toInteger(responseAdd.bufferForResult());
+        int resultSub = toInteger(responseSub.bufferForResult());
+        int resultMul = toInteger(responseMul.bufferForResult());
+        int resultDiv = toInteger(responseDiv.bufferForResult());
 
         assertEquals(responseAdd.getId(), startId);
         assertEquals(responseSub.getId(), startId + 1);
@@ -215,6 +195,55 @@ public class AbstractDisruptorTest
         {}
     }
 
+    protected class Work implements Callable<Request>
+    {
+        private final CountDownLatch latch;
+        private final int id, arg1, arg2;
+        private final OperationType op;
+
+        public Work(CountDownLatch latch, int id, int arg1, int arg2, OperationType op)
+        {
+            this.latch = latch;
+            this.id = id;
+            this.arg1 = arg1;
+            this.arg2 = arg2;
+            this.op = op;
+        }
+
+        @Override
+        public Request call() throws Exception
+        {
+            TTransport transport = getNewTransport();
+
+            try
+            {
+                TestService.Client client = getNewClient(transport);
+
+                Response res = client.invoke(getRequest(id, arg1, arg2, op));
+
+
+                switch (op)
+                {
+                    case ADD:
+                        assertEquals(id, res.getId());
+                        assertEquals(ArgType.INT, res.getResType());
+                        assertEquals(arg1 + arg2, toInteger(res.bufferForResult()));
+                        break;
+
+                    default:
+                        throw new IllegalStateException();
+                }
+            }
+            finally
+            {
+                transport.close();
+            }
+
+            latch.countDown();
+            return null;
+        }
+    }
+
     protected static ByteBuffer toByteBuffer(int integer)
     {
         ByteBuffer b = ByteBuffer.allocate(4).putInt(integer);
@@ -232,5 +261,14 @@ public class AbstractDisruptorTest
     {
         int n = RANDOM.nextInt(50000);
         return n == 0 ? 1 : n;
+    }
+
+    private static Request getRequest(int id, int arg1, int arg2, OperationType op)
+    {
+        return new Request().setId(id)
+                            .setArg1(toByteBuffer(arg1))
+                            .setArg2(toByteBuffer(arg2))
+                            .setArgType(ArgType.INT)
+                            .setOperationType(op);
     }
 }

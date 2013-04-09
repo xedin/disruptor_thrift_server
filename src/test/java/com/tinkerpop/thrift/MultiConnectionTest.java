@@ -20,13 +20,10 @@ package com.tinkerpop.thrift;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.tinkerpop.thrift.test.TestService;
+import com.tinkerpop.thrift.test.*;
 import org.apache.thrift.transport.TTransport;
 
 import org.junit.Test;
@@ -39,7 +36,6 @@ public class MultiConnectionTest extends AbstractDisruptorTest
     public void multipleConnectionsTest() throws Exception
     {
         ExecutorService service = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
-
         List<TTransport> transports = new ArrayList<>();
 
         final AtomicInteger ids = new AtomicInteger(1);
@@ -76,5 +72,37 @@ public class MultiConnectionTest extends AbstractDisruptorTest
 
         for (int i = 0; i < CONNECTIONS; i++)
             transports.get(i).close();
+    }
+
+    @Test
+    public void producerConsumerTest() throws Exception
+    {
+        final CountDownLatch latch = new CountDownLatch(CONNECTIONS);
+        final SynchronousQueue<Work> queue = new SynchronousQueue<>();
+        final ExecutorService service = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+
+        new Thread()
+        {
+            public void run()
+            {
+                int count = 0;
+                while (count < CONNECTIONS)
+                {
+                    Work newWork = queue.poll();
+
+                    if (newWork == null)
+                        continue;
+
+                    service.submit(newWork);
+                    count++;
+                }
+            }
+        }.start();
+
+        for (int i = 0; i < CONNECTIONS; i++)
+            queue.put(new Work(latch, i, getRandomArgument(), getRandomArgument(), OperationType.ADD));
+
+        latch.await();
+        service.shutdown();
     }
 }

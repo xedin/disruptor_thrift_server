@@ -114,7 +114,7 @@ public abstract class TDisruptorServer extends TNonblockingServer
 
         // unfortunate fact that Thrift transports still rely on byte arrays forces us to do this :(
         if (!(inputProtocolFactory_ instanceof TBinaryProtocol.Factory) || !(outputProtocolFactory_ instanceof TBinaryProtocol.Factory))
-            throw new IllegalArgumentException("Please use " + TBinaryProtocol.class.getCanonicalName() + " or it's subclass as protocol factories.");
+            throw new IllegalArgumentException("Please use " + TBinaryProtocol.Factory.class.getCanonicalName() + " or it's subclass as protocol factories.");
 
         invoker = (args.invoker == null)
                     ? Executors.newFixedThreadPool(numCores)
@@ -360,11 +360,11 @@ public abstract class TDisruptorServer extends TNonblockingServer
             }
             catch (IOException e)
             {
-                logger.warn("Got an IOException while selecting!", e);
+                logger.warn("Got an IOException while selecting: {}!", e);
             }
             catch (CancelledKeyException e)
             {
-                logger.error("Non-fatal Exception in select loop: " + e.getMessage());
+                logger.error("Non-fatal Exception in select loop: {}!", e);
             }
         }
 
