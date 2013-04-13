@@ -30,16 +30,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.lmax.disruptor.*;
-import com.tinkerpop.thrift.util.MessageFrameBuffer;
 import com.tinkerpop.thrift.util.TBinaryProtocol;
-import org.apache.thrift.TProcessorFactory;
-import org.apache.thrift.protocol.TProtocolFactory;
+import com.tinkerpop.thrift.util.ThriftFactories;
 import org.apache.thrift.server.AbstractNonblockingServer;
 import org.apache.thrift.server.TNonblockingServer;
 import org.apache.thrift.transport.TNonblockingServerTransport;
 import org.apache.thrift.transport.TNonblockingTransport;
 import org.apache.thrift.transport.TTransportException;
-import org.apache.thrift.transport.TTransportFactory;
 
 public abstract class TDisruptorServer extends TNonblockingServer
 {
@@ -87,6 +84,7 @@ public abstract class TDisruptorServer extends TNonblockingServer
     private final SelectorThread[] selectorThreads;
     private final ExecutorService invoker;
 
+    private final ThriftFactories thriftFactories;
     private volatile boolean stopped;
 
     public TDisruptorServer(Args args)
@@ -95,10 +93,10 @@ public abstract class TDisruptorServer extends TNonblockingServer
 
         final int numCores = Runtime.getRuntime().availableProcessors();
 
-        // by default, setting selectors to 1/4 of available CPUs
+        // by default, setting selectors to 1/4 of available CPUs (or 1 if CPU count is less than or equal to 4)
         // because we just want to split the iterative work (accept, put-to-ring)
         final int numSelectors = (args.numSelectors == null)
-                                   ? numCores / 4
+                                   ? (numCores < 4) ? 1 : numCores / 4
                                    : args.numSelectors;
 
         // by default, setting number of workers to match number of available CPUs
@@ -120,18 +118,23 @@ public abstract class TDisruptorServer extends TNonblockingServer
                     ? Executors.newFixedThreadPool(numCores)
                     : args.invoker;
 
-        RingBuffer<MessageEvent> ringBuffer = RingBuffer.createMultiProducer(MessageEvent.FACTORY, ringSize, new YieldingWaitStrategy());
+        /**
+         * YieldingWaitStrategy claims to be better compromise between throughput/latency and CPU usage comparing to
+         * BlockingWaitStrategy, but actual tests show quite the opposite, where YieldingWaitStrategy just constantly
+         * burns CPU cycles with no performance benefit when coupled with networking.
+         */
+        RingBuffer<Message.Event> ringBuffer = RingBuffer.createMultiProducer(Message.Event.FACTORY, ringSize, new BlockingWaitStrategy());
 
-        ThriftFactories thriftFactories = new ThriftFactories(inputTransportFactory_, outputTransportFactory_,
-                                                              inputProtocolFactory_,  outputProtocolFactory_,
-                                                              processorFactory_);
+        thriftFactories = new ThriftFactories(inputTransportFactory_, outputTransportFactory_,
+                                              inputProtocolFactory_,  outputProtocolFactory_,
+                                              processorFactory_);
 
         MessageHandler handlers[] = new MessageHandler[numWorkers];
 
         for (int i = 0; i < numWorkers; i++)
-            handlers[i] = new MessageHandler();
+            handlers[i] = new DisruptorMessageHandler();
 
-        WorkerPool<MessageEvent> workers = new WorkerPool<>(ringBuffer,
+        WorkerPool<Message.Event> workers = new WorkerPool<>(ringBuffer,
                                                             ringBuffer.newBarrier(),
                                                             new FatalExceptionHandler(),
                                                             handlers);
@@ -146,8 +149,7 @@ public abstract class TDisruptorServer extends TNonblockingServer
             {
                 selectorThreads[i] = new SelectorThread("Thrift-Selector_" + i,
                                                         ringBuffer,
-                                                        (TNonblockingServerTransport) serverTransport_,
-                                                        thriftFactories);
+                                                        (TNonblockingServerTransport) serverTransport_);
             }
         }
         catch (IOException e)
@@ -169,9 +171,6 @@ public abstract class TDisruptorServer extends TNonblockingServer
         return true;
     }
 
-    /**
-     * @inheritDoc
-     */
     @Override
     protected void waitForShutdown()
     {
@@ -215,9 +214,9 @@ public abstract class TDisruptorServer extends TNonblockingServer
             }
             catch (InterruptedException ix)
             {
-                long newnow = System.currentTimeMillis();
-                timeoutMS -= (newnow - now);
-                now = newnow;
+                long newNow = System.currentTimeMillis();
+                timeoutMS -= (newNow - now);
+                now = newNow;
             }
         }
     }
@@ -252,46 +251,40 @@ public abstract class TDisruptorServer extends TNonblockingServer
     /**
      * All implementations should use this method to provide custom behaviour in pre-invoke stage.
      *
-     * @param buffer The buffer associated with request in pre-invoke state.
+     * @param message The "message" or buffer associated with request in pre-invoke state.
      */
-    protected abstract void beforeInvoke(MessageFrameBuffer buffer);
+    protected abstract void beforeInvoke(Message message);
 
-    protected void dispatchInvoke(final SelectionKey key)
+    protected void dispatchInvoke(final Message message)
     {
         invoker.submit(new Runnable()
         {
             @Override
             public void run()
             {
-                MessageFrameBuffer buffer = (MessageFrameBuffer) key.attachment();
-                beforeInvoke(buffer);
-                buffer.invoke();
+                beforeInvoke(message);
+                message.invoke();
             }
         });
     }
 
     protected class SelectorThread extends SelectAcceptThread
     {
-        private final RingBuffer<MessageEvent> ringBuffer;
-        private final ThriftFactories thriftFactories;
+        private final RingBuffer<Message.Event> ringBuffer;
 
         /**
          * Set up the thread that will handle the non-blocking accepts, reads, and
          * writes.
          */
         public SelectorThread(String name,
-                              RingBuffer<MessageEvent> ringBuffer,
-                              TNonblockingServerTransport serverTransport,
-                              ThriftFactories thriftFactories) throws IOException
+                              RingBuffer<Message.Event> ringBuffer,
+                              TNonblockingServerTransport serverTransport) throws IOException
         {
             super(serverTransport);
-
             setName(name);
+            serverTransport.registerSelector(selector);
 
             this.ringBuffer = ringBuffer;
-            this.thriftFactories = thriftFactories;
-
-            serverTransport.registerSelector(selector);
         }
 
         @Override
@@ -325,7 +318,8 @@ public abstract class TDisruptorServer extends TNonblockingServer
             try
             {
                 // wait for io events.
-                selector.select();
+                if (selector.select() == 0)
+                    return;
 
                 // process the io events we received
                 Iterator<SelectionKey> selectedKeys = selector.selectedKeys().iterator();
@@ -349,11 +343,11 @@ public abstract class TDisruptorServer extends TNonblockingServer
                         continue;
                     }
 
-                    MessageFrameBuffer buffer = (MessageFrameBuffer) key.attachment();
+                    Message message = (Message) key.attachment();
 
-                    if (isReadable(key, buffer) || isWritable(key, buffer))
+                    if (isReadable(key, message) || isWritable(key, message))
                     {
-                        buffer.changeSelectInterests();
+                        message.changeSelectInterests();
                         dispatch(key);
                     }
                 }
@@ -364,18 +358,18 @@ public abstract class TDisruptorServer extends TNonblockingServer
             }
             catch (CancelledKeyException e)
             {
-                logger.error("Non-fatal Exception in select loop: {}!", e);
+                logger.debug("Non-fatal exception in select loop (probably somebody closed the channel)...", e);
             }
         }
 
-        private boolean isReadable(SelectionKey key, MessageFrameBuffer buffer)
+        private boolean isReadable(SelectionKey key, Message message)
         {
-            return buffer.isReadyToRead() && key.isReadable();
+            return message.isReadyToRead() && key.isReadable();
         }
 
-        private boolean isWritable(SelectionKey key, MessageFrameBuffer buffer)
+        private boolean isWritable(SelectionKey key, Message message)
         {
-            return buffer.isReadyToWrite() && key.isWritable();
+            return message.isReadyToWrite() && key.isWritable();
         }
 
         private void handleAccept() throws IOException
@@ -388,7 +382,7 @@ public abstract class TDisruptorServer extends TNonblockingServer
                 // accept the connection
                 client = (TNonblockingTransport) serverTransport_.accept();
                 clientKey = client.registerSelector(selector, SelectionKey.OP_READ);
-                clientKey.attach(new MessageFrameBuffer(client, clientKey, thriftFactories));
+                clientKey.attach(new Message(client, clientKey, thriftFactories));
             }
             catch (TTransportException tte)
             {
@@ -399,10 +393,10 @@ public abstract class TDisruptorServer extends TNonblockingServer
 
         private void dispatch(final SelectionKey key)
         {
-            ringBuffer.publishEvent(new EventTranslator<MessageEvent>()
+            ringBuffer.publishEvent(new EventTranslator<Message.Event>()
             {
                 @Override
-                public void translateTo(MessageEvent event, long sequence)
+                public void translateTo(Message.Event event, long sequence)
                 {
                     event.setKey(key);
                 }
@@ -413,10 +407,10 @@ public abstract class TDisruptorServer extends TNonblockingServer
         protected void cleanupSelectionKey(SelectionKey key)
         {
             // remove the records from the two maps
-            MessageFrameBuffer buffer = (MessageFrameBuffer) key.attachment();
+            Message message = (Message) key.attachment();
 
-            if (buffer != null)
-                buffer.close();
+            if (message != null)
+                message.close();
 
             // cancel the selection key
             key.cancel();
@@ -435,73 +429,12 @@ public abstract class TDisruptorServer extends TNonblockingServer
         }
     }
 
-    public class ThriftFactories
-    {
-        public final TTransportFactory inputTransportFactory, outputTransportFactory;
-        public final TProtocolFactory inputProtocolFactory, outputProtocolFactory;
-        public final TProcessorFactory processorFactory;
-
-        public ThriftFactories(TTransportFactory inputTransportFactory, TTransportFactory outputTransportFactory,
-                               TProtocolFactory inputProtocolFactory, TProtocolFactory outputProtocolFactory,
-                               TProcessorFactory processorFactory)
-        {
-            this.inputTransportFactory = inputTransportFactory;
-            this.outputTransportFactory = outputTransportFactory;
-            this.inputProtocolFactory = inputProtocolFactory;
-            this.outputProtocolFactory = outputProtocolFactory;
-            this.processorFactory = processorFactory;
-        }
-    }
-
-    protected class MessageHandler implements WorkHandler<MessageEvent>
+    private class DisruptorMessageHandler extends MessageHandler
     {
         @Override
-        public void onEvent(MessageEvent event) throws Exception
+        protected void handleInvoke(Message message)
         {
-            SelectionKey key = event.getKey();
-
-            assert key != null;
-
-            if (!key.isValid())
-                cleanupSelectionKey(key);
-            else if (key.interestOps() == SelectionKey.OP_READ)
-                handleRead(key);
-            else if (key.interestOps() == SelectionKey.OP_WRITE)
-                handleWrite(key);
-        }
-
-        private void handleRead(SelectionKey key)
-        {
-            MessageFrameBuffer buffer = (MessageFrameBuffer) key.attachment();
-
-            if (!buffer.read()) {
-                cleanupSelectionKey(key);
-                return;
-            }
-
-            // if the buffer's frame read is complete, invoke the method.
-            if (buffer.isFrameFullyRead())
-                dispatchInvoke(key);
-        }
-
-        private void handleWrite(SelectionKey key)
-        {
-            MessageFrameBuffer buffer = (MessageFrameBuffer) key.attachment();
-
-            if (!buffer.write())
-                cleanupSelectionKey(key);
-        }
-
-        protected void cleanupSelectionKey(SelectionKey key)
-        {
-            // remove the records from the two maps
-            MessageFrameBuffer buffer = (MessageFrameBuffer) key.attachment();
-
-            if (buffer != null)
-                buffer.close();
-
-            // cancel the selection key (aka close connection)
-            key.cancel();
+            dispatchInvoke(message);
         }
     }
 
@@ -516,29 +449,5 @@ public abstract class TDisruptorServer extends TNonblockingServer
         v++;
 
         return v;
-    }
-}
-
-class MessageEvent
-{
-    public static final EventFactory<MessageEvent> FACTORY = new EventFactory<MessageEvent>()
-    {
-        @Override
-        public MessageEvent newInstance()
-        {
-            return new MessageEvent();
-        }
-    };
-
-    public SelectionKey key;
-
-    public void setKey(SelectionKey key)
-    {
-        this.key = key;
-    }
-
-    public SelectionKey getKey()
-    {
-        return key;
     }
 }

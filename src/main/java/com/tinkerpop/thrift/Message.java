@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package com.tinkerpop.thrift.util;
+package com.tinkerpop.thrift;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -25,17 +25,20 @@ import java.nio.channels.SelectionKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.tinkerpop.thrift.TDisruptorServer;
+import com.lmax.disruptor.EventFactory;
+import com.tinkerpop.thrift.util.FastMemoryOutputTransport;
+import com.tinkerpop.thrift.util.Memory;
+import com.tinkerpop.thrift.util.TMemoryInputTransport;
+import com.tinkerpop.thrift.util.ThriftFactories;
 import org.apache.thrift.TException;
 import org.apache.thrift.protocol.TProtocol;
-import org.apache.thrift.transport.TIOStreamTransport;
 import org.apache.thrift.transport.TNonblockingTransport;
 import org.apache.thrift.transport.TTransport;
 
 /**
- * Possible states for the MessageFrameBuffer state machine.
+ * Possible states for the Message state machine.
  */
-enum FrameBufferState
+enum State
 {
     // in the midst of reading the frame size off the wire
     READING_FRAME_SIZE,
@@ -47,7 +50,7 @@ enum FrameBufferState
     AWAITING_REGISTER_WRITE,
     // started writing response data, not fully complete yet
     WRITING,
-    // another thread wants this framebuffer to go back to reading
+    // another thread wants this frame to go back to reading
     AWAITING_REGISTER_READ,
     // we want our transport and selection key invalidated in the selector
     // thread
@@ -61,26 +64,50 @@ enum FrameBufferState
  * response data back to the client. In the process it manages flipping the
  * read and write bits on the selection key for its client.
  */
-public class MessageFrameBuffer
+public class Message
 {
-    private static final Logger logger = LoggerFactory.getLogger(MessageFrameBuffer.class);
+    private static final Logger logger = LoggerFactory.getLogger(Message.class);
+
+    public static class Event
+    {
+        public static final EventFactory<Event> FACTORY = new EventFactory<Event>()
+        {
+            @Override
+            public Event newInstance()
+            {
+                return new Event();
+            }
+        };
+
+        public SelectionKey key;
+
+        public void setKey(SelectionKey key)
+        {
+            this.key = key;
+        }
+
+        public SelectionKey getKey()
+        {
+            return key;
+        }
+    }
 
     // the actual transport hooked up to the client.
     public final TNonblockingTransport transport;
-    public final TDisruptorServer.ThriftFactories thriftFactories;
+    public final ThriftFactories thriftFactories;
 
     // the SelectionKey that corresponds to our transport
     private final SelectionKey selectionKey;
 
     // where in the process of reading/writing are we?
-    private FrameBufferState state = FrameBufferState.AWAITING_REGISTER_READ;
+    private State state = State.AWAITING_REGISTER_READ;
 
     private ByteBuffer buffer = null, frameSizeBuffer = ByteBuffer.allocate(4);
     private Memory backingMemory;
 
-    private FastMemoryOutputStream response;
+    private FastMemoryOutputTransport response;
 
-    public MessageFrameBuffer(TNonblockingTransport trans, SelectionKey key, TDisruptorServer.ThriftFactories factories)
+    public Message(TNonblockingTransport trans, SelectionKey key, ThriftFactories factories)
     {
         transport = trans;
         selectionKey = key;
@@ -89,24 +116,24 @@ public class MessageFrameBuffer
 
     public boolean isReadyToRead()
     {
-        return state == FrameBufferState.AWAITING_REGISTER_READ;
+        return state == State.AWAITING_REGISTER_READ;
     }
 
     public boolean isReadyToWrite()
     {
-        return state == FrameBufferState.AWAITING_REGISTER_WRITE;
+        return state == State.AWAITING_REGISTER_WRITE;
     }
 
     /**
-     * Give this MessageFrameBuffer a chance to read. The selector loop should have
-     * received a read event for this MessageFrameBuffer.
+     * Give this Message a chance to read. The selector loop should have
+     * received a read event for this Message.
      *
      * @return true if the connection should live on, false if it should be
      *         closed
      */
     public boolean read()
     {
-        if (state == FrameBufferState.READING_FRAME_SIZE)
+        if (state == State.READING_FRAME_SIZE)
         {
             // try to read the frame size completely
             if (!internalReadFrameSize())
@@ -128,7 +155,7 @@ public class MessageFrameBuffer
                 // reallocate to match frame size (if needed)
                 reallocateBuffer(frameSize);
 
-                state = FrameBufferState.READING_FRAME;
+                state = State.READING_FRAME;
             }
             else
             {
@@ -143,7 +170,7 @@ public class MessageFrameBuffer
         // to READING_FRAME if there's already some frame data available once
         // READING_FRAME_SIZE is complete.
 
-        if (state == FrameBufferState.READING_FRAME)
+        if (state == State.READING_FRAME)
         {
             if (!internalRead(buffer))
                 return false;
@@ -154,7 +181,7 @@ public class MessageFrameBuffer
             {
                 // get rid of the read select interests
                 selectionKey.interestOps(0);
-                state = FrameBufferState.READ_FRAME_COMPLETE;
+                state = State.READ_FRAME_COMPLETE;
             }
 
             return true;
@@ -167,15 +194,15 @@ public class MessageFrameBuffer
 
     public boolean isFrameFullyRead()
     {
-        return state == FrameBufferState.READ_FRAME_COMPLETE;
+        return state == State.READ_FRAME_COMPLETE;
     }
 
     /**
-     * Give this MessageFrameBuffer a chance to write its output to the final client.
+     * Give this Message a chance to write its output to the final client.
      */
     public boolean write()
     {
-        assert state == FrameBufferState.WRITING;
+        assert state == State.WRITING;
 
         try
         {
@@ -199,15 +226,14 @@ public class MessageFrameBuffer
     }
 
     /**
-     * Give this MessageFrameBuffer a chance to set its interest to write, once data
-     * has come in.
+     * Give this Message a chance to change its interests.
      */
     public void changeSelectInterests()
     {
         switch (state)
         {
             case AWAITING_REGISTER_WRITE: // set the OP_WRITE interest
-                state = FrameBufferState.WRITING;
+                state = State.WRITING;
                 break;
 
             case AWAITING_REGISTER_READ:
@@ -224,24 +250,15 @@ public class MessageFrameBuffer
         }
     }
 
-    /**
-     * After the processor has processed the invocation, whatever thread is
-     * managing invocations should call this method on this MessageFrameBuffer so we
-     * know it's time to start trying to write again. Also, if it turns out that
-     * there actually isn't any data in the response buffer, we'll skip trying
-     * to write and instead go back to reading.
-     */
     public void responseReady()
     {
-        // TODO: the read buffer is definitely no longer in use, so we will decrement
-        // our read buffer count. we do this here as well as in close because
-        // we'd like to free this read memory up as quickly as possible for other
-        // clients.
-
         if (response.size() == 0)
         {
             // go straight to reading again. this was probably an one way method
             switchToRead();
+
+            // we can close response stream as it wouldn't be used and we want to reclaim resources
+            response.close();
         }
         else
         {
@@ -255,11 +272,11 @@ public class MessageFrameBuffer
     }
 
     /**
-     * Actually invoke the method signified by this MessageFrameBuffer.
+     * Actually invoke the method signified by this Message.
      */
     public void invoke()
     {
-        assert state == FrameBufferState.READ_FRAME_COMPLETE : "Invoke called is invalid state: " + state;
+        assert state == State.READ_FRAME_COMPLETE : "Invoke called in invalid state: " + state;
 
         TTransport inTrans = getInputTransport();
         TProtocol inProt = thriftFactories.inputProtocolFactory.getProtocol(inTrans);
@@ -281,7 +298,7 @@ public class MessageFrameBuffer
         }
 
         // This will only be reached when there is a throwable.
-        state = FrameBufferState.AWAITING_CLOSE;
+        state = State.AWAITING_CLOSE;
         changeSelectInterests();
     }
 
@@ -299,8 +316,8 @@ public class MessageFrameBuffer
      */
     private TTransport getOutputTransport()
     {
-        response = new FastMemoryOutputStream();
-        return thriftFactories.outputTransportFactory.getTransport(new TIOStreamTransport(response));
+        response = new FastMemoryOutputTransport();
+        return thriftFactories.outputTransportFactory.getTransport(response);
     }
 
     private boolean internalReadFrameSize()
@@ -320,7 +337,9 @@ public class MessageFrameBuffer
         try
         {
             return !(transport.read(buffer) < 0);
-        } catch (IOException e) {
+        }
+        catch (IOException e)
+        {
             logger.warn("Got an IOException in internalRead!", e);
             return false;
         }
@@ -333,19 +352,20 @@ public class MessageFrameBuffer
     private void prepareRead()
     {
         // get ready for another read-around
-        state = FrameBufferState.READING_FRAME_SIZE;
+        state = State.READING_FRAME_SIZE;
     }
 
     private void switchToRead()
     {
         selectionKey.interestOps(SelectionKey.OP_READ);
-        state = FrameBufferState.AWAITING_REGISTER_READ;
+        state = State.AWAITING_REGISTER_READ;
     }
 
     private void switchToWrite()
     {
         selectionKey.interestOps(SelectionKey.OP_WRITE);
-        state = FrameBufferState.AWAITING_REGISTER_WRITE;
+        state = State.AWAITING_REGISTER_WRITE;
+        selectionKey.selector().wakeup();
     }
 
     private void freeBuffer()

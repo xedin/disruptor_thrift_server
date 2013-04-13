@@ -27,7 +27,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 
 import com.tinkerpop.thrift.test.*;
-import com.tinkerpop.thrift.util.MessageFrameBuffer;
 import com.tinkerpop.thrift.util.TBinaryProtocol;
 import org.apache.thrift.TException;
 import org.apache.thrift.server.TServer;
@@ -147,7 +146,7 @@ public class AbstractDisruptorTest
         }
 
         @Override
-        protected void beforeInvoke(MessageFrameBuffer buffer)
+        protected void beforeInvoke(Message message)
         {}
     }
 
