@@ -374,19 +374,19 @@ public class Message
             return;
 
         backingMemory.free();
+
+        backingMemory = null;
         buffer = null;
     }
 
     private void reallocateBuffer(int newSize)
     {
+        if (backingMemory != null && buffer.capacity() != newSize)
+            freeBuffer();
+
         if (backingMemory == null)
         {
             backingMemory = Memory.allocate(newSize);
-            buffer = backingMemory.toByteBuffer();
-        }
-        else if (buffer.capacity() != newSize)
-        {
-            backingMemory.reallocate(newSize);
             buffer = backingMemory.toByteBuffer();
         }
 
