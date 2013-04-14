@@ -116,12 +116,12 @@ public class Message
 
     public boolean isReadyToRead()
     {
-        return state == State.AWAITING_REGISTER_READ;
+        return state == State.AWAITING_REGISTER_READ && selectionKey.isReadable();
     }
 
     public boolean isReadyToWrite()
     {
-        return state == State.AWAITING_REGISTER_WRITE;
+        return state == State.AWAITING_REGISTER_WRITE && selectionKey.isWritable();
     }
 
     /**

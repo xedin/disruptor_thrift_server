@@ -339,13 +339,15 @@ public abstract class TDisruptorServer extends TNonblockingServer
                     // if the key is marked Accept, then it has to be the server transport.
                     if (key.isAcceptable())
                     {
-                        handleAccept();
-                        continue;
+                        key = handleAccept();
+
+                        if (key == null)
+                            continue;
                     }
 
                     Message message = (Message) key.attachment();
 
-                    if (isReadable(key, message) || isWritable(key, message))
+                    if (message.isReadyToRead() || message.isReadyToWrite())
                     {
                         message.changeSelectInterests();
                         dispatch(key);
@@ -362,25 +364,14 @@ public abstract class TDisruptorServer extends TNonblockingServer
             }
         }
 
-        private boolean isReadable(SelectionKey key, Message message)
+        private SelectionKey handleAccept() throws IOException
         {
-            return message.isReadyToRead() && key.isReadable();
-        }
-
-        private boolean isWritable(SelectionKey key, Message message)
-        {
-            return message.isReadyToWrite() && key.isWritable();
-        }
-
-        private void handleAccept() throws IOException
-        {
-            final SelectionKey clientKey;
-            final TNonblockingTransport client;
+            SelectionKey clientKey = null;
 
             try
             {
                 // accept the connection
-                client = (TNonblockingTransport) serverTransport_.accept();
+                TNonblockingTransport client = (TNonblockingTransport) serverTransport_.accept();
                 clientKey = client.registerSelector(selector, SelectionKey.OP_READ);
                 clientKey.attach(new Message(client, clientKey, thriftFactories));
             }
@@ -389,6 +380,8 @@ public abstract class TDisruptorServer extends TNonblockingServer
                 // accept() shouldn't be NULL if fine because are are raising for a socket
                 logger.debug("Non-fatal exception trying to accept!", tte);
             }
+
+            return clientKey;
         }
 
         private void dispatch(final SelectionKey key)
