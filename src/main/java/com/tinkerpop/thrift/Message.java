@@ -40,20 +40,16 @@ import org.apache.thrift.transport.TTransport;
  */
 enum State
 {
-    // in the midst of reading the frame size off the wire
+    READY_TO_READ_FRAME_SIZE,
     READING_FRAME_SIZE,
-    // reading the actual frame data now, but not all the way done yet
+
+    READY_TO_READ_FRAME,
     READING_FRAME,
-    // completely read the frame, so an invocation can now happen
     READ_FRAME_COMPLETE,
-    // waiting to get switched to listening for write events
-    AWAITING_REGISTER_WRITE,
-    // started writing response data, not fully complete yet
+
+    READY_TO_WRITE,
     WRITING,
-    // another thread wants this frame to go back to reading
-    AWAITING_REGISTER_READ,
-    // we want our transport and selection key invalidated in the selector
-    // thread
+
     AWAITING_CLOSE
 }
 
@@ -100,7 +96,7 @@ public class Message
     private final SelectionKey selectionKey;
 
     // where in the process of reading/writing are we?
-    private State state = State.AWAITING_REGISTER_READ;
+    private State state = State.READY_TO_READ_FRAME_SIZE;
 
     private ByteBuffer buffer = null, frameSizeBuffer = ByteBuffer.allocate(4);
     private Memory backingMemory;
@@ -116,12 +112,12 @@ public class Message
 
     public boolean isReadyToRead()
     {
-        return state == State.AWAITING_REGISTER_READ && selectionKey.isReadable();
+        return (state == State.READY_TO_READ_FRAME_SIZE || state == State.READY_TO_READ_FRAME) && selectionKey.isReadable();
     }
 
     public boolean isReadyToWrite()
     {
-        return state == State.AWAITING_REGISTER_WRITE && selectionKey.isWritable();
+        return state == State.READY_TO_WRITE && selectionKey.isWritable();
     }
 
     /**
@@ -153,7 +149,7 @@ public class Message
                 }
 
                 // reallocate to match frame size (if needed)
-                reallocateBuffer(frameSize);
+                allocateBuffer(frameSize);
 
                 state = State.READING_FRAME;
             }
@@ -162,6 +158,7 @@ public class Message
                 // this skips the check of READING_FRAME state below, since we can't
                 // possibly go on to that state if there's data left to be read at
                 // this one.
+                state = State.READY_TO_READ_FRAME_SIZE;
                 return true;
             }
         }
@@ -175,14 +172,9 @@ public class Message
             if (!internalRead(buffer))
                 return false;
 
-            // since we're already in the select loop here for sure, we can just
-            // modify our selection key directly.
-            if (buffer.remaining() == 0)
-            {
-                // get rid of the read select interests
-                selectionKey.interestOps(0);
-                state = State.READ_FRAME_COMPLETE;
-            }
+            state = (buffer.remaining() == 0)
+                     ? State.READ_FRAME_COMPLETE
+                     : State.READY_TO_READ_FRAME;
 
             return true;
         }
@@ -232,12 +224,16 @@ public class Message
     {
         switch (state)
         {
-            case AWAITING_REGISTER_WRITE: // set the OP_WRITE interest
+            case READY_TO_WRITE: // set the OP_WRITE interest
                 state = State.WRITING;
                 break;
 
-            case AWAITING_REGISTER_READ:
-                prepareRead();
+            case READY_TO_READ_FRAME_SIZE:
+                state = State.READING_FRAME_SIZE;
+                break;
+
+            case READY_TO_READ_FRAME:
+                state = State.READING_FRAME;
                 break;
 
             case AWAITING_CLOSE:
@@ -345,26 +341,34 @@ public class Message
         }
     }
 
-    /**
-     * We're done writing, so reset our interest ops and change state
-     * accordingly.
-     */
-    private void prepareRead()
-    {
-        // get ready for another read-around
-        state = State.READING_FRAME_SIZE;
-    }
-
     private void switchToRead()
     {
-        selectionKey.interestOps(SelectionKey.OP_READ);
-        state = State.AWAITING_REGISTER_READ;
+        switchMode(State.READY_TO_READ_FRAME_SIZE);
     }
 
     private void switchToWrite()
     {
-        selectionKey.interestOps(SelectionKey.OP_WRITE);
-        state = State.AWAITING_REGISTER_WRITE;
+        switchMode(State.READY_TO_WRITE);
+    }
+
+    private void switchMode(State newState)
+    {
+        state = newState;
+
+        switch (newState)
+        {
+            case READY_TO_READ_FRAME_SIZE:
+                selectionKey.interestOps(SelectionKey.OP_READ);
+                break;
+
+            case READY_TO_WRITE:
+                selectionKey.interestOps(SelectionKey.OP_WRITE);
+                break;
+
+            default:
+                throw new IllegalArgumentException("Illegal state: " + newState);
+        }
+
         selectionKey.selector().wakeup();
     }
 
@@ -379,7 +383,7 @@ public class Message
         buffer = null;
     }
 
-    private void reallocateBuffer(int newSize)
+    private void allocateBuffer(int newSize)
     {
         if (backingMemory != null && buffer.capacity() != newSize)
             freeBuffer();

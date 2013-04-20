@@ -96,12 +96,12 @@ public abstract class TDisruptorServer extends TNonblockingServer
         // by default, setting selectors to 1/4 of available CPUs (or 1 if CPU count is less than or equal to 4)
         // because we just want to split the iterative work (accept, put-to-ring)
         final int numSelectors = (args.numSelectors == null)
-                                   ? (numCores < 4) ? 1 : numCores / 4
+                                   ? (numCores <= 4) ? 1 : numCores / 4
                                    : args.numSelectors;
 
-        // by default, setting number of workers to match number of available CPUs
+        // by default, setting number of workers to utilize half of available CPUs
         final int numWorkers = (args.numWorkers == null)
-                                   ? numCores
+                                   ? (numCores <= 2) ? 1 : numCores / 2
                                    : args.numWorkers;
 
         // by default, setting size of the ring buffer so each worker has 1024 slots available,
@@ -282,7 +282,6 @@ public abstract class TDisruptorServer extends TNonblockingServer
         {
             super(serverTransport);
             setName(name);
-            serverTransport.registerSelector(selector);
 
             this.ringBuffer = ringBuffer;
         }
@@ -341,7 +340,7 @@ public abstract class TDisruptorServer extends TNonblockingServer
                     {
                         key = handleAccept();
 
-                        if (key == null)
+                        if (key == null || key.readyOps() == 0)
                             continue;
                     }
 

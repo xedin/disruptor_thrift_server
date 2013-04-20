@@ -34,10 +34,16 @@ public abstract class MessageHandler implements WorkHandler<Message.Event>
         Message message = (Message) key.attachment();
 
         if (!key.isValid())
+        {
             cleanup(key);
-        else if (key.interestOps() == SelectionKey.OP_READ)
+            return;
+        }
+
+        int interest = key.interestOps();
+
+        if (interest == SelectionKey.OP_READ)
             handleRead(key, message);
-        else if (key.interestOps() == SelectionKey.OP_WRITE)
+        else if (interest == SelectionKey.OP_WRITE)
             handleWrite(key, message);
     }
 
