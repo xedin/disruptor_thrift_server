@@ -42,10 +42,28 @@ public abstract class TDisruptorServer extends TNonblockingServer
 {
     private static final Logger logger = LoggerFactory.getLogger(TDisruptorServer.class);
 
+    private static final boolean isJNAPresent;
+
+    static
+    {
+        boolean jna = false;
+
+        try
+        {
+            new com.sun.jna.Pointer(0);
+            jna = true;
+        }
+        catch (UnsatisfiedLinkError e)
+        {}
+
+        isJNAPresent = jna;
+    }
+
     public static class Args extends AbstractNonblockingServer.AbstractNonblockingServerArgs<Args>
     {
         private Integer numSelectors, numWorkers, ringSize;
         private ExecutorService invoker;
+        private boolean onHeapBuffers;
 
         public Args(TNonblockingServerTransport transport)
         {
@@ -79,12 +97,21 @@ public abstract class TDisruptorServer extends TNonblockingServer
             this.invoker = service;
             return this;
         }
+
+        @SuppressWarnings("unused")
+        public Args useOnHeapBuffers(boolean flag)
+        {
+            this.onHeapBuffers = flag;
+            return this;
+        }
     }
 
     private final SelectorThread[] selectorThreads;
     private final ExecutorService invoker;
 
     private final ThriftFactories thriftFactories;
+    private final boolean onHeapBuffers;
+
     private volatile boolean stopped;
 
     public TDisruptorServer(Args args)
@@ -117,6 +144,16 @@ public abstract class TDisruptorServer extends TNonblockingServer
         invoker = (args.invoker == null)
                     ? Executors.newFixedThreadPool(numCores)
                     : args.invoker;
+
+        // there is no need to force people to have JNA in classpath,
+        // let's just warn them that it's not there and we are switching to on-heap allocation.
+        if (!args.onHeapBuffers && !isJNAPresent)
+        {
+            logger.warn("Off-heap allocation couldn't be used as JNA is not present in classpath or broken, using on-heap instead.");
+            args.onHeapBuffers = true;
+        }
+
+        onHeapBuffers = args.onHeapBuffers;
 
         /**
          * YieldingWaitStrategy claims to be better compromise between throughput/latency and CPU usage comparing to
@@ -372,7 +409,7 @@ public abstract class TDisruptorServer extends TNonblockingServer
                 // accept the connection
                 TNonblockingTransport client = (TNonblockingTransport) serverTransport_.accept();
                 clientKey = client.registerSelector(selector, SelectionKey.OP_READ);
-                clientKey.attach(new Message(client, clientKey, thriftFactories));
+                clientKey.attach(new Message(client, clientKey, thriftFactories, onHeapBuffers));
             }
             catch (TTransportException tte)
             {

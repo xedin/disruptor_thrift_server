@@ -19,16 +19,14 @@
 package com.tinkerpop.thrift;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.lmax.disruptor.EventFactory;
-import com.tinkerpop.thrift.util.FastMemoryOutputTransport;
-import com.tinkerpop.thrift.util.Memory;
-import com.tinkerpop.thrift.util.TMemoryInputTransport;
+import com.tinkerpop.thrift.util.mem.FastMemoryOutputTransport;
+import com.tinkerpop.thrift.util.mem.Buffer;
 import com.tinkerpop.thrift.util.ThriftFactories;
 import org.apache.thrift.TException;
 import org.apache.thrift.protocol.TProtocol;
@@ -98,16 +96,19 @@ public class Message
     // where in the process of reading/writing are we?
     private State state = State.READY_TO_READ_FRAME_SIZE;
 
-    private ByteBuffer buffer = null, frameSizeBuffer = ByteBuffer.allocate(4);
-    private Memory backingMemory;
+    private Buffer dataBuffer, frameSizeBuffer;
 
     private FastMemoryOutputTransport response;
 
-    public Message(TNonblockingTransport trans, SelectionKey key, ThriftFactories factories)
+    private final boolean onHeapBuffers;
+
+    public Message(TNonblockingTransport trans, SelectionKey key, ThriftFactories factories, boolean onHeapAllocation)
     {
+        frameSizeBuffer = Buffer.allocate(4, onHeapAllocation);
         transport = trans;
         selectionKey = key;
         thriftFactories = factories;
+        onHeapBuffers = onHeapAllocation;
     }
 
     public boolean isReadyToRead()
@@ -132,7 +133,7 @@ public class Message
         if (state == State.READING_FRAME_SIZE)
         {
             // try to read the frame size completely
-            if (!internalReadFrameSize())
+            if (!internalRead(frameSizeBuffer))
                 return false;
 
             // if the frame size has been read completely, then prepare to read the
@@ -149,7 +150,9 @@ public class Message
                 }
 
                 // reallocate to match frame size (if needed)
-                allocateBuffer(frameSize);
+                reallocateDataBuffer(frameSize);
+
+                frameSizeBuffer.clear(); // prepare it to the next round of reading (if any)
 
                 state = State.READING_FRAME;
             }
@@ -169,10 +172,10 @@ public class Message
 
         if (state == State.READING_FRAME)
         {
-            if (!internalRead(buffer))
+            if (!internalRead(dataBuffer))
                 return false;
 
-            state = (buffer.remaining() == 0)
+            state = (dataBuffer.remaining() == 0)
                      ? State.READ_FRAME_COMPLETE
                      : State.READY_TO_READ_FRAME;
 
@@ -198,7 +201,7 @@ public class Message
 
         try
         {
-            if (transport.write(response.toByteBuffer()) < 0)
+            if (response.writeFullyTo(transport) < 0)
                 return false;
         }
         catch (IOException e)
@@ -299,12 +302,12 @@ public class Message
     }
 
     /**
-     * Wrap the read buffer in a memory-based transport so a processor can read
+     * Wrap the read dataBuffer in a memory-based transport so a processor can read
      * the data it needs to handle an invocation.
      */
     private TTransport getInputTransport()
     {
-        return new TMemoryInputTransport(buffer);
+        return dataBuffer.getInputTransport();
     }
 
     /**
@@ -312,27 +315,21 @@ public class Message
      */
     private TTransport getOutputTransport()
     {
-        response = new FastMemoryOutputTransport();
+        response = new FastMemoryOutputTransport(32, onHeapBuffers);
         return thriftFactories.outputTransportFactory.getTransport(response);
     }
 
-    private boolean internalReadFrameSize()
-    {
-        frameSizeBuffer.clear();
-        return internalRead(frameSizeBuffer);
-    }
-
     /**
-     * Perform a read into buffer.
+     * Perform a read into dataBuffer.
      *
      * @return true if the read succeeded, false if there was an error or the
      *         connection closed.
      */
-    private boolean internalRead(ByteBuffer buffer)
+    private boolean internalRead(Buffer buffer)
     {
         try
         {
-            return !(transport.read(buffer) < 0);
+            return !(buffer.readFrom(transport) < 0);
         }
         catch (IOException e)
         {
@@ -372,29 +369,24 @@ public class Message
         selectionKey.selector().wakeup();
     }
 
-    private void freeBuffer()
+    private void freeDataBuffer()
     {
-        if (backingMemory == null || backingMemory.getPeer() == 0) // paranoia
+        if (dataBuffer == null)
             return;
 
-        backingMemory.free();
-
-        backingMemory = null;
-        buffer = null;
+        dataBuffer.free();
+        dataBuffer = null;
     }
 
-    private void allocateBuffer(int newSize)
+    private void reallocateDataBuffer(int newSize)
     {
-        if (backingMemory != null && buffer.capacity() != newSize)
-            freeBuffer();
+        if (dataBuffer != null && dataBuffer.size() != newSize)
+            freeDataBuffer();
 
-        if (backingMemory == null)
-        {
-            backingMemory = Memory.allocate(newSize);
-            buffer = backingMemory.toByteBuffer();
-        }
+        if (dataBuffer == null)
+            dataBuffer = Buffer.allocate(newSize, onHeapBuffers);
 
-        buffer.clear();
+        dataBuffer.clear();
     }
 
     /**
@@ -402,7 +394,8 @@ public class Message
      */
     public void close()
     {
-        freeBuffer();
+        freeDataBuffer();
+        frameSizeBuffer.free();
         transport.close();
     }
 }

@@ -25,6 +25,8 @@ import org.apache.thrift.TException;
 import org.apache.thrift.protocol.TProtocol;
 import org.apache.thrift.transport.TTransport;
 
+import com.tinkerpop.thrift.util.mem.TMemoryInputTransport;
+
 /**
  * Thrift original TBinaryProtocol implementation relies on the fact that all
  * TTransport instances are byte array backed, so for all it's operations they can just

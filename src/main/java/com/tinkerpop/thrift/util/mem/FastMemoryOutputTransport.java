@@ -14,12 +14,11 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-package com.tinkerpop.thrift.util;
+package com.tinkerpop.thrift.util.mem;
 
-import java.nio.ByteBuffer;
+import java.io.IOException;
 
-import com.sun.jna.Pointer;
-import com.tinkerpop.thrift.util.Memory;
+import org.apache.thrift.transport.TNonblockingTransport;
 import org.apache.thrift.transport.TTransport;
 import org.apache.thrift.transport.TTransportException;
 
@@ -28,21 +27,12 @@ public class FastMemoryOutputTransport extends TTransport
     /**
      * The byte array containing the bytes written.
      */
-    protected Memory buf;
+    protected Buffer buf;
 
     /**
      * The number of bytes written.
      */
     protected int count;
-
-    /**
-     * Constructs a new {@code FastMemoryOutputTransport} with a default size of 32 bytes.
-     * If more than 32 bytes are written to this instance, the underlying byte buffer will be expanded.
-     */
-    public FastMemoryOutputTransport()
-    {
-        this(32);
-    }
 
     @Override
     public boolean isOpen()
@@ -63,12 +53,12 @@ public class FastMemoryOutputTransport extends TTransport
      *
      * @throws IllegalArgumentException if {@code size} < 0.
      */
-    public FastMemoryOutputTransport(int size)
+    public FastMemoryOutputTransport(int size, boolean onHeapBuffers)
     {
         if (size <= 0)
             throw new IllegalArgumentException();
 
-        buf = Memory.allocate(size);
+        buf = Buffer.allocate(size, onHeapBuffers);
     }
 
     /**
@@ -77,9 +67,6 @@ public class FastMemoryOutputTransport extends TTransport
     @Override
     public void close()
     {
-        if (buf.getPeer() == 0) // paranoia
-            return;
-
         buf.free();
     }
 
@@ -108,9 +95,18 @@ public class FastMemoryOutputTransport extends TTransport
         return count;
     }
 
-    public ByteBuffer toByteBuffer()
+    /**
+     * Write all accumulated content to the given transport.
+     *
+     * @param transport The transport to write contents into.
+     *
+     * @return The number of bytes actually written to the transport.
+     *
+     * @throws IOException on any I/O related error, such as socket disconnect.
+     */
+    public int writeFullyTo(TNonblockingTransport transport) throws IOException
     {
-        return new Pointer(buf.peer).getByteBuffer(0, count);
+        return buf.writeTo(transport, 0, count);
     }
 
     /**
@@ -158,7 +154,7 @@ public class FastMemoryOutputTransport extends TTransport
         expand(len);
 
         for (int i = count, j = offset; j < offset + len; i++, j++)
-            buf.setByteUnsafe(i, buffer[j]);
+            buf.put(i, buffer[j]);
 
         count += len;
     }

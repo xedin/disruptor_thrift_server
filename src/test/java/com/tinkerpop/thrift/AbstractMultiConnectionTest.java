@@ -28,7 +28,7 @@ import org.apache.thrift.transport.TTransport;
 
 import org.junit.Test;
 
-public class MultiConnectionTest extends AbstractDisruptorTest
+public abstract class AbstractMultiConnectionTest extends AbstractDisruptorTest
 {
     private static final int CONNECTIONS = 250;
 

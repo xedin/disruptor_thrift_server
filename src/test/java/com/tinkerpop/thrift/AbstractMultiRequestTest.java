@@ -31,7 +31,7 @@ import org.apache.thrift.transport.TTransport;
 
 import org.junit.Test;
 
-public class MultiRequestTest extends AbstractDisruptorTest
+public abstract class AbstractMultiRequestTest extends AbstractDisruptorTest
 {
     private static final int REQUESTS = 500;
 

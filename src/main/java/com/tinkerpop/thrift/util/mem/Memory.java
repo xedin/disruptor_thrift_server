@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.tinkerpop.thrift.util;
+package com.tinkerpop.thrift.util.mem;
 
 import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Field;
@@ -27,7 +27,7 @@ import sun.misc.Unsafe;
 /**
  * An off-heap region of memory that must be manually free'd when no longer needed.
  */
-public class Memory
+class Memory
 {
     private static final Unsafe unsafe;
 
@@ -214,10 +214,12 @@ public class Memory
         return peer;
     }
 
-    public void reallocate(int newSize)
+    public Memory reallocate(int newSize)
     {
         peer = unsafe.reallocateMemory(peer, newSize);
         size = newSize;
+
+        return this;
     }
 
     public void free()

@@ -58,8 +58,7 @@ public class AbstractDisruptorTest
         }
     }
 
-    @BeforeClass
-    public static void prepareTest() throws Exception
+    public static void prepareTest(boolean onHeapBuffers) throws Exception
     {
         final TNonblockingServerTransport socket = new TNonblockingServerSocket(new InetSocketAddress(HOST, SERVER_PORT));
         final TBinaryProtocol.Factory protocol = new TBinaryProtocol.Factory();
@@ -69,7 +68,8 @@ public class AbstractDisruptorTest
                                                          .outputTransportFactory(new TFramedTransport.Factory())
                                                          .inputProtocolFactory(protocol)
                                                          .outputProtocolFactory(protocol)
-                                                         .processor(new TestService.Processor<TestService.Iface>(new Service()));
+                                                         .processor(new TestService.Processor<TestService.Iface>(new Service()))
+                                                         .useOnHeapBuffers(onHeapBuffers);
 
         TEST_SERVICE = new CustomTDisruptorServer(args);
 
