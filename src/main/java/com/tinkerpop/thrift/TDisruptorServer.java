@@ -18,7 +18,10 @@
  */
 package com.tinkerpop.thrift;
 
+import javax.management.MBeanServer;
+import javax.management.ObjectName;
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.nio.channels.CancelledKeyException;
 import java.nio.channels.SelectionKey;
 import java.util.Iterator;
@@ -38,7 +41,7 @@ import org.apache.thrift.transport.TNonblockingServerTransport;
 import org.apache.thrift.transport.TNonblockingTransport;
 import org.apache.thrift.transport.TTransportException;
 
-public abstract class TDisruptorServer extends TNonblockingServer
+public abstract class TDisruptorServer extends TNonblockingServer implements TDisruptorServerMBean
 {
     private static final Logger logger = LoggerFactory.getLogger(TDisruptorServer.class);
 
@@ -59,11 +62,13 @@ public abstract class TDisruptorServer extends TNonblockingServer
         isJNAPresent = jna;
     }
 
+    public static final String MBEAN_NAME = "com.tinkerpop.thrift.server:type=TDisruptorServer";
+
     public static class Args extends AbstractNonblockingServer.AbstractNonblockingServerArgs<Args>
     {
         private Integer numSelectors, numWorkers, ringSize;
         private ExecutorService invoker;
-        private boolean onHeapBuffers;
+        private boolean useHeapBasedAllocation;
 
         public Args(TNonblockingServerTransport transport)
         {
@@ -99,20 +104,21 @@ public abstract class TDisruptorServer extends TNonblockingServer
         }
 
         @SuppressWarnings("unused")
-        public Args useOnHeapBuffers(boolean flag)
+        public Args useHeapBasedAllocation(boolean flag)
         {
-            this.onHeapBuffers = flag;
+            this.useHeapBasedAllocation = flag;
             return this;
         }
     }
+
+    private final RingBuffer<Message.Event> ringBuffer;
 
     private final SelectorThread[] selectorThreads;
     private final ExecutorService invoker;
 
     private final ThriftFactories thriftFactories;
-    private final boolean onHeapBuffers;
 
-    private volatile boolean stopped;
+    private volatile boolean useHeapBasedAllocation, isStopped;
 
     public TDisruptorServer(Args args)
     {
@@ -134,7 +140,7 @@ public abstract class TDisruptorServer extends TNonblockingServer
         // by default, setting size of the ring buffer so each worker has 1024 slots available,
         // rounded to the nearest power 2 (as requirement of Disruptor).
         final int ringSize = (args.ringSize == null)
-                                   ? nearestPowerOf2(1024 * numCores)
+                                   ? nextPowerOfTwo(1024 * numCores)
                                    : args.ringSize;
 
         // unfortunate fact that Thrift transports still rely on byte arrays forces us to do this :(
@@ -147,20 +153,20 @@ public abstract class TDisruptorServer extends TNonblockingServer
 
         // there is no need to force people to have JNA in classpath,
         // let's just warn them that it's not there and we are switching to on-heap allocation.
-        if (!args.onHeapBuffers && !isJNAPresent)
+        if (!args.useHeapBasedAllocation && !isJNAPresent)
         {
             logger.warn("Off-heap allocation couldn't be used as JNA is not present in classpath or broken, using on-heap instead.");
-            args.onHeapBuffers = true;
+            args.useHeapBasedAllocation = true;
         }
 
-        onHeapBuffers = args.onHeapBuffers;
+        useHeapBasedAllocation = args.useHeapBasedAllocation;
 
         /**
          * YieldingWaitStrategy claims to be better compromise between throughput/latency and CPU usage comparing to
          * BlockingWaitStrategy, but actual tests show quite the opposite, where YieldingWaitStrategy just constantly
          * burns CPU cycles with no performance benefit when coupled with networking.
          */
-        RingBuffer<Message.Event> ringBuffer = RingBuffer.createMultiProducer(Message.Event.FACTORY, ringSize, new BlockingWaitStrategy());
+        ringBuffer = RingBuffer.createMultiProducer(Message.Event.FACTORY, ringSize, new BlockingWaitStrategy());
 
         thriftFactories = new ThriftFactories(inputTransportFactory_, outputTransportFactory_,
                                               inputProtocolFactory_,  outputProtocolFactory_,
@@ -172,9 +178,9 @@ public abstract class TDisruptorServer extends TNonblockingServer
             handlers[i] = new DisruptorMessageHandler();
 
         WorkerPool<Message.Event> workers = new WorkerPool<>(ringBuffer,
-                                                            ringBuffer.newBarrier(),
-                                                            new FatalExceptionHandler(),
-                                                            handlers);
+                                                             ringBuffer.newBarrier(),
+                                                             new FatalExceptionHandler(),
+                                                             handlers);
 
         workers.start(Executors.newFixedThreadPool(numWorkers));
 
@@ -185,7 +191,6 @@ public abstract class TDisruptorServer extends TNonblockingServer
             for (int i = 0; i < numSelectors; i++)
             {
                 selectorThreads[i] = new SelectorThread("Thrift-Selector_" + i,
-                                                        ringBuffer,
                                                         (TNonblockingServerTransport) serverTransport_);
             }
         }
@@ -194,12 +199,25 @@ public abstract class TDisruptorServer extends TNonblockingServer
             logger.error("Could not create selector thread: {}", e.getMessage());
             throw new AssertionError(e);
         }
+
+        /* Register JXM listener */
+
+        MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+
+        try
+        {
+            mbs.registerMBean(this, new ObjectName(MBEAN_NAME));
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
     protected boolean startThreads()
     {
-        stopped = false;
+        isStopped = false;
         for (int i = 0; i < selectorThreads.length; i++)
         {
             selectorThreads[i].start(); // start the selector
@@ -261,7 +279,7 @@ public abstract class TDisruptorServer extends TNonblockingServer
     @Override
     public void stop()
     {
-        stopped = true;
+        isStopped = true;
 
         for (int i = 0; i < selectorThreads.length; i++)
             selectorThreads[i].wakeupSelector();
@@ -307,20 +325,14 @@ public abstract class TDisruptorServer extends TNonblockingServer
 
     protected class SelectorThread extends SelectAcceptThread
     {
-        private final RingBuffer<Message.Event> ringBuffer;
-
         /**
          * Set up the thread that will handle the non-blocking accepts, reads, and
          * writes.
          */
-        public SelectorThread(String name,
-                              RingBuffer<Message.Event> ringBuffer,
-                              TNonblockingServerTransport serverTransport) throws IOException
+        public SelectorThread(String name, TNonblockingServerTransport serverTransport) throws IOException
         {
             super(serverTransport);
             setName(name);
-
-            this.ringBuffer = ringBuffer;
         }
 
         @Override
@@ -339,14 +351,14 @@ public abstract class TDisruptorServer extends TNonblockingServer
             }
             finally
             {
-                stopped = true;
+                isStopped = true;
             }
         }
 
         @Override
         public boolean isStopped()
         {
-            return stopped;
+            return isStopped;
         }
 
         private void select()
@@ -409,7 +421,7 @@ public abstract class TDisruptorServer extends TNonblockingServer
                 // accept the connection
                 TNonblockingTransport client = (TNonblockingTransport) serverTransport_.accept();
                 clientKey = client.registerSelector(selector, SelectionKey.OP_READ);
-                clientKey.attach(new Message(client, clientKey, thriftFactories, onHeapBuffers));
+                clientKey.attach(new Message(client, clientKey, thriftFactories, useHeapBasedAllocation));
             }
             catch (TTransportException tte)
             {
@@ -467,16 +479,37 @@ public abstract class TDisruptorServer extends TNonblockingServer
         }
     }
 
-    private static int nearestPowerOf2(int v)
+    private static int nextPowerOfTwo(int v)
     {
-        v--;
-        v |= v >> 1;
-        v |= v >> 2;
-        v |= v >> 4;
-        v |= v >> 8;
-        v |= v >> 16;
-        v++;
+        return 1 << (32 - Integer.numberOfLeadingZeros(v - 1));
+    }
 
-        return v;
+    /* JMX section */
+
+    @Override
+    public int getRingBufferSize()
+    {
+        return ringBuffer.getBufferSize();
+    }
+
+    @Override
+    public int getNumberOfSelectors()
+    {
+        return selectorThreads.length;
+    }
+
+    @Override
+    public boolean isHeapBasedAllocationUsed()
+    {
+        return useHeapBasedAllocation;
+    }
+
+    @Override
+    public void useHeapBasedAllocation(boolean flag)
+    {
+        if (!flag && !isJNAPresent)
+            throw new IllegalArgumentException("Off-Heap allocation method could not be used because JNA is missing.");
+
+        useHeapBasedAllocation = flag;
     }
 }

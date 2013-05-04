@@ -100,15 +100,15 @@ public class Message
 
     private FastMemoryOutputTransport response;
 
-    private final boolean onHeapBuffers;
+    private final boolean useHeapBasedAllocation;
 
-    public Message(TNonblockingTransport trans, SelectionKey key, ThriftFactories factories, boolean onHeapAllocation)
+    public Message(TNonblockingTransport trans, SelectionKey key, ThriftFactories factories, boolean heapBasedAllocation)
     {
-        frameSizeBuffer = Buffer.allocate(4, onHeapAllocation);
+        frameSizeBuffer = Buffer.allocate(4, heapBasedAllocation);
         transport = trans;
         selectionKey = key;
         thriftFactories = factories;
-        onHeapBuffers = onHeapAllocation;
+        useHeapBasedAllocation = heapBasedAllocation;
     }
 
     public boolean isReadyToRead()
@@ -315,7 +315,7 @@ public class Message
      */
     private TTransport getOutputTransport()
     {
-        response = new FastMemoryOutputTransport(32, onHeapBuffers);
+        response = new FastMemoryOutputTransport(32, useHeapBasedAllocation);
         return thriftFactories.outputTransportFactory.getTransport(response);
     }
 
@@ -384,7 +384,7 @@ public class Message
             freeDataBuffer();
 
         if (dataBuffer == null)
-            dataBuffer = Buffer.allocate(newSize, onHeapBuffers);
+            dataBuffer = Buffer.allocate(newSize, useHeapBasedAllocation);
 
         dataBuffer.clear();
     }

@@ -33,7 +33,6 @@ import org.apache.thrift.server.TServer;
 import org.apache.thrift.transport.*;
 
 import org.junit.AfterClass;
-import org.junit.BeforeClass;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
@@ -69,7 +68,7 @@ public class AbstractDisruptorTest
                                                          .inputProtocolFactory(protocol)
                                                          .outputProtocolFactory(protocol)
                                                          .processor(new TestService.Processor<TestService.Iface>(new Service()))
-                                                         .useOnHeapBuffers(onHeapBuffers);
+                                                         .useHeapBasedAllocation(onHeapBuffers);
 
         TEST_SERVICE = new CustomTDisruptorServer(args);
 

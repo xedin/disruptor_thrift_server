@@ -50,15 +50,16 @@ public class FastMemoryOutputTransport extends TTransport
      * instance, the underlying byte buffer will expanded.
      *
      * @param size initial size for the underlying byte buffer, must be non-negative.
+     * @param useHeapBasedAllocation Flag to trigger ByteBuffer.allocate(int) or off-heap memory allocation for storage.
      *
      * @throws IllegalArgumentException if {@code size} < 0.
      */
-    public FastMemoryOutputTransport(int size, boolean onHeapBuffers)
+    public FastMemoryOutputTransport(int size, boolean useHeapBasedAllocation)
     {
         if (size <= 0)
             throw new IllegalArgumentException();
 
-        buf = Buffer.allocate(size, onHeapBuffers);
+        buf = Buffer.allocate(size, useHeapBasedAllocation);
     }
 
     /**
