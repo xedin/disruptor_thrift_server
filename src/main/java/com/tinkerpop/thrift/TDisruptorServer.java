@@ -58,6 +58,8 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
         }
         catch (UnsatisfiedLinkError e)
         {}
+        catch (NoClassDefFoundError e)
+        {}
 
         isJNAPresent = jna;
     }
