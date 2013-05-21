@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package com.tinkerpop.thrift;
+package com.thinkaurelius.thrift;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-import com.tinkerpop.thrift.test.TestService;
+import com.thinkaurelius.thrift.test.TestService;
 import org.apache.thrift.transport.TTransport;
 
 import org.junit.Test;

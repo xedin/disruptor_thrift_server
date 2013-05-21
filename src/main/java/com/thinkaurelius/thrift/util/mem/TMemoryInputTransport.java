@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package com.tinkerpop.thrift.util.mem;
+package com.thinkaurelius.thrift.util.mem;
 
 import java.nio.ByteBuffer;
 

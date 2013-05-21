@@ -16,15 +16,15 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package com.tinkerpop.thrift;
+package com.thinkaurelius.thrift;
 
 import org.junit.BeforeClass;
 
-public class OffHeapMultiConnectionTest extends AbstractMultiConnectionTest
+public class OnHeapMultiRequestTest extends AbstractMultiRequestTest
 {
     @BeforeClass
     public static void prepareTest() throws Exception
     {
-        prepareTest(false);
+        prepareTest(true);
     }
 }

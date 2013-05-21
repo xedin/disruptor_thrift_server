@@ -16,14 +16,14 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package com.tinkerpop.thrift;
+package com.thinkaurelius.thrift;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.tinkerpop.thrift.test.*;
+import com.thinkaurelius.thrift.test.*;
 import org.apache.thrift.transport.TTransport;
 
 import org.junit.Test;

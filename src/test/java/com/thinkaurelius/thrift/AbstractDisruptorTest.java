@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package com.tinkerpop.thrift;
+package com.thinkaurelius.thrift;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -26,8 +26,8 @@ import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 
-import com.tinkerpop.thrift.test.*;
-import com.tinkerpop.thrift.util.TBinaryProtocol;
+import com.thinkaurelius.thrift.test.*;
+import com.thinkaurelius.thrift.util.TBinaryProtocol;
 import org.apache.thrift.TException;
 import org.apache.thrift.server.TServer;
 import org.apache.thrift.transport.*;

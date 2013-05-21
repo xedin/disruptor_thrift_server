@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.tinkerpop.thrift.util.mem;
+package com.thinkaurelius.thrift.util.mem;
 
 import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Field;

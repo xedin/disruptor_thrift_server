@@ -4,22 +4,16 @@
  * DO NOT EDIT UNLESS YOU ARE SURE THAT YOU KNOW WHAT YOU ARE DOING
  *  @generated
  */
-package com.tinkerpop.thrift.test;
+package com.thinkaurelius.thrift.test;
 
 
-import java.util.Map;
-import java.util.HashMap;
-import org.apache.thrift.TEnum;
-
-public enum OperationType implements org.apache.thrift.TEnum {
-  ADD(0),
-  MUL(1),
-  DIV(2),
-  SUB(3);
+public enum ArgType implements org.apache.thrift.TEnum {
+  INT(0),
+  LONG(1);
 
   private final int value;
 
-  private OperationType(int value) {
+  private ArgType(int value) {
     this.value = value;
   }
 
@@ -34,16 +28,12 @@ public enum OperationType implements org.apache.thrift.TEnum {
    * Find a the enum type by its integer value, as defined in the Thrift IDL.
    * @return null if the value is not found.
    */
-  public static OperationType findByValue(int value) { 
+  public static ArgType findByValue(int value) { 
     switch (value) {
       case 0:
-        return ADD;
+        return INT;
       case 1:
-        return MUL;
-      case 2:
-        return DIV;
-      case 3:
-        return SUB;
+        return LONG;
       default:
         return null;
     }

@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package com.tinkerpop.thrift;
+package com.thinkaurelius.thrift;
 
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
@@ -33,8 +33,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.lmax.disruptor.*;
-import com.tinkerpop.thrift.util.TBinaryProtocol;
-import com.tinkerpop.thrift.util.ThriftFactories;
+import com.thinkaurelius.thrift.util.TBinaryProtocol;
+import com.thinkaurelius.thrift.util.ThriftFactories;
 import org.apache.thrift.server.AbstractNonblockingServer;
 import org.apache.thrift.server.TNonblockingServer;
 import org.apache.thrift.transport.TNonblockingServerTransport;
@@ -64,7 +64,7 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
         isJNAPresent = jna;
     }
 
-    public static final String MBEAN_NAME = "com.tinkerpop.thrift.server:type=TDisruptorServer";
+    public static final String MBEAN_NAME = "com.thinkaurelius.thrift.server:type=TDisruptorServer";
 
     public static class Args extends AbstractNonblockingServer.AbstractNonblockingServerArgs<Args>
     {

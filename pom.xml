@@ -6,7 +6,7 @@
         <artifactId>oss-parent</artifactId>
         <version>7</version>
     </parent>
-    <groupId>com.tinkerpop.thrift</groupId>
+    <groupId>com.thinkaurelius.thrift</groupId>
     <artifactId>thrift</artifactId>
     <version>0.1-SNAPSHOT</version>
     <packaging>jar</packaging>

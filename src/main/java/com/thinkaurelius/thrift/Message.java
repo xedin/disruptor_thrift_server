@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package com.tinkerpop.thrift;
+package com.thinkaurelius.thrift;
 
 import java.io.IOException;
 import java.nio.channels.SelectionKey;
@@ -25,9 +25,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.lmax.disruptor.EventFactory;
-import com.tinkerpop.thrift.util.mem.FastMemoryOutputTransport;
-import com.tinkerpop.thrift.util.mem.Buffer;
-import com.tinkerpop.thrift.util.ThriftFactories;
+import com.thinkaurelius.thrift.util.mem.FastMemoryOutputTransport;
+import com.thinkaurelius.thrift.util.mem.Buffer;
+import com.thinkaurelius.thrift.util.ThriftFactories;
 import org.apache.thrift.TException;
 import org.apache.thrift.protocol.TProtocol;
 import org.apache.thrift.transport.TNonblockingTransport;
