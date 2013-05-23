@@ -25,9 +25,7 @@ import java.lang.management.ManagementFactory;
 import java.nio.channels.CancelledKeyException;
 import java.nio.channels.SelectionKey;
 import java.util.Iterator;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,10 +54,10 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
             new com.sun.jna.Pointer(0);
             jna = true;
         }
-        catch (UnsatisfiedLinkError e)
-        {}
         catch (NoClassDefFoundError e)
-        {}
+        {
+            // can't do anything about it, going to use on-heap buffers instead
+        }
 
         isJNAPresent = jna;
     }
@@ -68,8 +66,7 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
 
     public static class Args extends AbstractNonblockingServer.AbstractNonblockingServerArgs<Args>
     {
-        private Integer numSelectors, numWorkers, ringSize;
-        private ExecutorService invoker;
+        private Integer numSelectors, numWorkersPerSelector, ringSize;
         private boolean useHeapBasedAllocation;
 
         public Args(TNonblockingServerTransport transport)
@@ -85,23 +82,16 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
         }
 
         @SuppressWarnings("unused")
-        public Args numWorkers(int numWorkers)
+        public Args numWorkersPerSelector(int numWorkers)
         {
-            this.numWorkers = numWorkers;
+            this.numWorkersPerSelector = numWorkers;
             return this;
         }
 
         @SuppressWarnings("unused")
-        public Args ringSize(int ringSize)
+        public Args ringSizePerSelector(int ringSize)
         {
             this.ringSize = ringSize;
-            return this;
-        }
-
-        @SuppressWarnings("unused")
-        public Args invokerService(ExecutorService service)
-        {
-            this.invoker = service;
             return this;
         }
 
@@ -113,11 +103,7 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
         }
     }
 
-    private final RingBuffer<Message.Event> ringBuffer;
-
     private final SelectorThread[] selectorThreads;
-    private final ExecutorService invoker;
-
     private final ThriftFactories thriftFactories;
 
     private volatile boolean useHeapBasedAllocation, isStopped;
@@ -128,30 +114,24 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
 
         final int numCores = Runtime.getRuntime().availableProcessors();
 
-        // by default, setting selectors to 1/4 of available CPUs (or 1 if CPU count is less than or equal to 4)
-        // because we just want to split the iterative work (accept, put-to-ring)
         final int numSelectors = (args.numSelectors == null)
-                                   ? (numCores <= 4) ? 1 : numCores / 4
+                                   ? numCores
                                    : args.numSelectors;
 
-        // by default, setting number of workers to utilize half of available CPUs
-        final int numWorkers = (args.numWorkers == null)
-                                   ? (numCores <= 2) ? 1 : numCores / 2
-                                   : args.numWorkers;
+        // by default, setting number of workers to 2 as we have selector per core
+        final int numWorkersPerSelector = (args.numWorkersPerSelector == null)
+                                           ? 2
+                                           : args.numWorkersPerSelector;
 
-        // by default, setting size of the ring buffer so each worker has 1024 slots available,
+        // by default, setting size of the ring buffer so each worker has 2048 slots available,
         // rounded to the nearest power 2 (as requirement of Disruptor).
         final int ringSize = (args.ringSize == null)
-                                   ? nextPowerOfTwo(1024 * numCores)
+                                   ? 2048
                                    : args.ringSize;
 
         // unfortunate fact that Thrift transports still rely on byte arrays forces us to do this :(
         if (!(inputProtocolFactory_ instanceof TBinaryProtocol.Factory) || !(outputProtocolFactory_ instanceof TBinaryProtocol.Factory))
             throw new IllegalArgumentException("Please use " + TBinaryProtocol.Factory.class.getCanonicalName() + " or it's subclass as protocol factories.");
-
-        invoker = (args.invoker == null)
-                    ? Executors.newFixedThreadPool(numCores)
-                    : args.invoker;
 
         // there is no need to force people to have JNA in classpath,
         // let's just warn them that it's not there and we are switching to on-heap allocation.
@@ -163,28 +143,9 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
 
         useHeapBasedAllocation = args.useHeapBasedAllocation;
 
-        /**
-         * YieldingWaitStrategy claims to be better compromise between throughput/latency and CPU usage comparing to
-         * BlockingWaitStrategy, but actual tests show quite the opposite, where YieldingWaitStrategy just constantly
-         * burns CPU cycles with no performance benefit when coupled with networking.
-         */
-        ringBuffer = RingBuffer.createMultiProducer(Message.Event.FACTORY, ringSize, new BlockingWaitStrategy());
-
         thriftFactories = new ThriftFactories(inputTransportFactory_, outputTransportFactory_,
                                               inputProtocolFactory_,  outputProtocolFactory_,
                                               processorFactory_);
-
-        MessageHandler handlers[] = new MessageHandler[numWorkers];
-
-        for (int i = 0; i < numWorkers; i++)
-            handlers[i] = new DisruptorMessageHandler();
-
-        WorkerPool<Message.Event> workers = new WorkerPool<>(ringBuffer,
-                                                             ringBuffer.newBarrier(),
-                                                             new FatalExceptionHandler(),
-                                                             handlers);
-
-        workers.start(Executors.newFixedThreadPool(numWorkers));
 
         try
         {
@@ -193,7 +154,9 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
             for (int i = 0; i < numSelectors; i++)
             {
                 selectorThreads[i] = new SelectorThread("Thrift-Selector_" + i,
-                                                        (TNonblockingServerTransport) serverTransport_);
+                                                        (TNonblockingServerTransport) serverTransport_,
+                                                        nextPowerOfTwo(ringSize),
+                                                        numWorkersPerSelector);
             }
         }
         catch (IOException e)
@@ -240,8 +203,8 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
     {
         try
         {
-            for (int i = 0; i < selectorThreads.length; i++)
-                selectorThreads[i].join(); // wait until the selector thread exits
+            for (SelectorThread selector : selectorThreads)
+                selector.join(); // wait until the selector thread exits
         }
         catch (InterruptedException e)
         {
@@ -252,30 +215,8 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
 
     protected void gracefullyShutdownInvokerPool()
     {
-        // try to gracefully shut down the executor service
-        invoker.shutdown();
-
-        // Loop until awaitTermination finally does return without a interrupted
-        // exception. If we don't do this, then we'll shut down prematurely. We want
-        // to let the executorService clear it's task queue, closing client sockets
-        // appropriately.
-        long timeoutMS = 150; // milliseconds
-        long now = System.currentTimeMillis();
-
-        while (timeoutMS >= 0)
-        {
-            try
-            {
-                invoker.awaitTermination(timeoutMS, TimeUnit.MILLISECONDS);
-                break;
-            }
-            catch (InterruptedException ix)
-            {
-                long newNow = System.currentTimeMillis();
-                timeoutMS -= (newNow - now);
-                now = newNow;
-            }
-        }
+        for (SelectorThread selector : selectorThreads)
+            selector.shutdown();
     }
 
     @Override
@@ -283,16 +224,16 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
     {
         isStopped = true;
 
-        for (int i = 0; i < selectorThreads.length; i++)
-            selectorThreads[i].wakeupSelector();
+        for (SelectorThread selector : selectorThreads)
+            selector.wakeupSelector();
     }
 
     @Override
     public boolean isStopped()
     {
-        for (int i = 0; i < selectorThreads.length; i++)
+        for (SelectorThread selector : selectorThreads)
         {
-            if (!selectorThreads[i].isStopped())
+            if (!selector.isStopped())
                 return false;
         }
 
@@ -312,29 +253,38 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
      */
     protected abstract void beforeInvoke(Message message);
 
-    protected void dispatchInvoke(final Message message)
-    {
-        invoker.submit(new Runnable()
-        {
-            @Override
-            public void run()
-            {
-                beforeInvoke(message);
-                message.invoke();
-            }
-        });
-    }
-
     protected class SelectorThread extends SelectAcceptThread
     {
+        private final RingBuffer<Message.Invocation> ringBuffer;
+        private final WorkerPool<Message.Invocation> workerPool;
         /**
          * Set up the thread that will handle the non-blocking accepts, reads, and
          * writes.
          */
-        public SelectorThread(String name, TNonblockingServerTransport serverTransport) throws IOException
+        public SelectorThread(String name,
+                              TNonblockingServerTransport serverTransport,
+                              int ringSize,
+                              int numWorkers) throws IOException
         {
             super(serverTransport);
+
             setName(name);
+
+            InvocationHandler handlers[] = new InvocationHandler[numWorkers];
+
+            for (int i = 0; i < handlers.length; i++)
+                handlers[i] = new InvocationHandler();
+
+            /**
+             * YieldingWaitStrategy claims to be better compromise between throughput/latency and CPU usage comparing to
+             * BlockingWaitStrategy, but actual tests show quite the opposite, where YieldingWaitStrategy just constantly
+             * burns CPU cycles with no performance benefit when coupled with networking.
+             */
+            ringBuffer = RingBuffer.createSingleProducer(Message.Invocation.FACTORY, ringSize, new BlockingWaitStrategy());
+            workerPool = new WorkerPool<>(ringBuffer, ringBuffer.newBarrier(), new FatalExceptionHandler(), handlers);
+            workerPool.start((numWorkers == 1)
+                              ? Executors.newSingleThreadExecutor()
+                              : Executors.newFixedThreadPool(numWorkers));
         }
 
         @Override
@@ -389,19 +339,16 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
                     // if the key is marked Accept, then it has to be the server transport.
                     if (key.isAcceptable())
                     {
-                        key = handleAccept();
-
-                        if (key == null || key.readyOps() == 0)
-                            continue;
+                        handleAccept();
+                        continue;
                     }
 
                     Message message = (Message) key.attachment();
 
-                    if (message.isReadyToRead() || message.isReadyToWrite())
-                    {
-                        message.changeSelectInterests();
-                        dispatch(key);
-                    }
+                    if (message.isReadyToRead())
+                        handleRead(message);
+                    else if (message.isReadyToWrite())
+                        handleWrite(message);
                 }
             }
             catch (IOException e)
@@ -414,15 +361,13 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
             }
         }
 
-        private SelectionKey handleAccept() throws IOException
+        private void handleAccept() throws IOException
         {
-            SelectionKey clientKey = null;
-
             try
             {
                 // accept the connection
                 TNonblockingTransport client = (TNonblockingTransport) serverTransport_.accept();
-                clientKey = client.registerSelector(selector, SelectionKey.OP_READ);
+                SelectionKey clientKey = client.registerSelector(selector, SelectionKey.OP_READ);
                 clientKey.attach(new Message(client, clientKey, thriftFactories, useHeapBasedAllocation));
             }
             catch (TTransportException tte)
@@ -430,20 +375,6 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
                 // accept() shouldn't be NULL if fine because are are raising for a socket
                 logger.debug("Non-fatal exception trying to accept!", tte);
             }
-
-            return clientKey;
-        }
-
-        private void dispatch(final SelectionKey key)
-        {
-            ringBuffer.publishEvent(new EventTranslator<Message.Event>()
-            {
-                @Override
-                public void translateTo(Message.Event event, long sequence)
-                {
-                    event.setKey(key);
-                }
-            });
         }
 
         @Override
@@ -459,6 +390,42 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
             key.cancel();
         }
 
+        protected void handleRead(Message message)
+        {
+            message.changeSelectInterests();
+
+            if (!message.read())
+                message.cancel();
+            else if (message.isFrameFullyRead())
+                dispatchInvoke(message);
+        }
+
+        protected void handleWrite(Message message)
+        {
+            message.changeSelectInterests();
+
+            if (!message.write())
+                message.cancel();
+        }
+
+        protected void dispatchInvoke(final Message message)
+        {
+            boolean success = ringBuffer.tryPublishEvent(new EventTranslator<Message.Invocation>()
+            {
+                @Override
+                public void translateTo(Message.Invocation invocation, long sequence)
+                {
+                    invocation.setMessage(message);
+                }
+            });
+
+            if (!success)
+            {  // looks like we are overloaded, let's cancel this request (connection) and drop warn in the log
+                logger.warn(this + " ring buffer is full, dropping client message.");
+                message.cancel();
+            }
+        }
+
         @Override
         protected void handleRead(SelectionKey key)
         {
@@ -470,14 +437,15 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
         {
             throw new UnsupportedOperationException();
         }
-    }
 
-    private class DisruptorMessageHandler extends MessageHandler
-    {
-        @Override
-        protected void handleInvoke(Message message)
+        public void shutdown()
         {
-            dispatchInvoke(message);
+            workerPool.drainAndHalt();
+        }
+
+        public int getRingBufferSize()
+        {
+            return ringBuffer.getBufferSize();
         }
     }
 
@@ -491,7 +459,7 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
     @Override
     public int getRingBufferSize()
     {
-        return ringBuffer.getBufferSize();
+        return selectorThreads[0].getRingBufferSize();
     }
 
     @Override
@@ -513,5 +481,15 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
             throw new IllegalArgumentException("Off-Heap allocation method could not be used because JNA is missing.");
 
         useHeapBasedAllocation = flag;
+    }
+
+    public class InvocationHandler implements WorkHandler<Message.Invocation>
+    {
+        @Override
+        public void onEvent(Message.Invocation invocation) throws Exception
+        {
+            beforeInvoke(invocation.getMessage());
+            invocation.execute();
+        }
     }
 }

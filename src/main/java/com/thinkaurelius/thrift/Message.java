@@ -62,27 +62,32 @@ public class Message
 {
     private static final Logger logger = LoggerFactory.getLogger(Message.class);
 
-    public static class Event
+    public static class Invocation
     {
-        public static final EventFactory<Event> FACTORY = new EventFactory<Event>()
+        public static final EventFactory<Invocation> FACTORY = new EventFactory<Invocation>()
         {
             @Override
-            public Event newInstance()
+            public Invocation newInstance()
             {
-                return new Event();
+                return new Invocation();
             }
         };
 
-        public SelectionKey key;
+        public Message message;
 
-        public void setKey(SelectionKey key)
+        public void setMessage(Message message)
         {
-            this.key = key;
+            this.message = message;
         }
 
-        public SelectionKey getKey()
+        public Message getMessage()
         {
-            return key;
+            return message;
+        }
+
+        public void execute()
+        {
+            message.invoke();
         }
     }
 
@@ -261,11 +266,6 @@ public class Message
         }
         else
         {
-            // set state that we're waiting to be switched to write. we do this
-            // asynchronously through requestSelectInterestChange() because there is
-            // a possibility that we're not in the main thread, and thus currently
-            // blocked in select(). (this functionality is in place for the sake of
-            // the HsHa server.)
             switchToWrite();
         }
     }
@@ -397,5 +397,14 @@ public class Message
         freeDataBuffer();
         frameSizeBuffer.free();
         transport.close();
+
+        if (response != null)
+            response.close();
+    }
+
+    public void cancel()
+    {
+        close();
+        selectionKey.cancel();
     }
 }
