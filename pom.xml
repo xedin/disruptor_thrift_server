@@ -7,16 +7,18 @@
         <version>7</version>
     </parent>
     <groupId>com.thinkaurelius.thrift</groupId>
-    <artifactId>thrift</artifactId>
+    <artifactId>thrift-server</artifactId>
     <version>0.1-SNAPSHOT</version>
     <packaging>jar</packaging>
     <prerequisites>
         <maven>2.2.1</maven>
     </prerequisites>
-    <name>LMAX Disruptor backed Thrift Server implementation</name>
+    <name>Thrift Server implementation backed by LMAX Disruptor</name>
     <url>http://github.com/xedin/disruptor_thrift_server</url>
     <description>
-        Disruptor backed Thrift Server.
+        Thrift Server implementation backed by LMAX Disruptor.
+        Shows better throughput/latency characteristics than build-in
+        THsHa and TThreadedSelector servers.
     </description>
     <developers>
         <developer>
@@ -25,13 +27,18 @@
             <url>http://github.com/xedin</url>
         </developer>
     </developers>
-    <inceptionYear>2012</inceptionYear>
+    <inceptionYear>2013</inceptionYear>
     <licenses>
         <license>
             <name>Apache 2</name>
             <url>http://www.opensource.org/licenses/Apache-2.0</url>
         </license>
     </licenses>
+    <scm>
+        <connection>scm:git:git@github.com:xedin/disruptor_thrift_server.git</connection>
+        <developerConnection>scm:git:git@github.com:xedin/disruptor_thrift_server.git</developerConnection>
+        <url>git@github.com:xedin/disruptor_thrift_server.git</url>
+    </scm>
     <properties>
         <junit.version>4.5</junit.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
