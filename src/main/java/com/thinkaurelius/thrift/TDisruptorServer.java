@@ -494,7 +494,7 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
             message.changeSelectInterests();
 
             if (!message.read())
-                message.cancel();
+                cancelMessage(message);
             else if (message.isFrameFullyRead())
                 dispatchInvoke(message);
         }
@@ -504,7 +504,7 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
             message.changeSelectInterests();
 
             if (!message.write())
-                message.cancel();
+                cancelMessage(message);
         }
 
         protected void dispatchInvoke(final Message message)
@@ -521,8 +521,14 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
             if (!success)
             {  // looks like we are overloaded, let's cancel this request (connection) and drop warn in the log
                 logger.warn(this + " ring buffer is full, dropping client message.");
-                message.cancel();
+                cancelMessage(message);
             }
+        }
+
+        private void cancelMessage(Message message)
+        {
+            beforeClose(message);
+            message.cancel();
         }
 
         public void subscribe(TNonblockingTransport newClient)
@@ -539,6 +545,14 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
         {
             return ringBuffer.getBufferSize();
         }
+    }
+
+    /**
+     * Allows derived classes to react when a connection is closed.
+     */
+    protected void beforeClose(Message buffer)
+    {
+        //NOP by default
     }
 
     private static int nextPowerOfTwo(int v)
