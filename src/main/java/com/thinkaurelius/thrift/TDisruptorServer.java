@@ -527,8 +527,8 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
 
         private void cancelMessage(Message message)
         {
+            beforeClose(message);
             message.cancel();
-            onConnectionClose(message);
         }
 
         public void subscribe(TNonblockingTransport newClient)
@@ -550,7 +550,7 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
     /**
      * Allows derived classes to react when a connection is closed.
      */
-    protected void onConnectionClose(Message buffer)
+    protected void beforeClose(Message buffer)
     {
         //NOP by default
     }
