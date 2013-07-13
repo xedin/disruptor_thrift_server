@@ -78,30 +78,7 @@ public class TBinaryProtocol extends org.apache.thrift.protocol.TBinaryProtocol
         {
             return (transport instanceof TMemoryInputTransport)
                      ? new TBinaryProtocol((TMemoryInputTransport) transport, strictRead_, strictWrite_)
-                     : super.getProtocol(transport);
-        }
-    }
-
-    @Override
-    public void writeBinary(ByteBuffer buffer) throws TException
-    {
-        writeI32(buffer.remaining());
-
-        if (buffer.hasArray())
-        {
-            trans_.write(buffer.array(), buffer.position() + buffer.arrayOffset(), buffer.remaining());
-        }
-        else
-        {
-            byte[] bytes = new byte[buffer.remaining()];
-
-            int j = 0;
-            for (int i = buffer.position(); i < buffer.limit(); i++)
-            {
-                bytes[j++] = buffer.get(i);
-            }
-
-            trans_.write(bytes);
+                     : new ExtendedTBinaryProtocol(transport);
         }
     }
 
@@ -157,5 +134,34 @@ public class TBinaryProtocol extends org.apache.thrift.protocol.TBinaryProtocol
         int size = readI32();
         checkReadLength(size);
         return inMemoryTransport.readBytes(size);
+    }
+
+    private static class ExtendedTBinaryProtocol extends org.apache.thrift.protocol.TBinaryProtocol {
+        public ExtendedTBinaryProtocol(TTransport trans) {
+            super(trans);
+        }
+
+        @Override
+        public void writeBinary(ByteBuffer buffer) throws TException
+        {
+            writeI32(buffer.remaining());
+
+            if (buffer.hasArray())
+            {
+                trans_.write(buffer.array(), buffer.position() + buffer.arrayOffset(), buffer.remaining());
+            }
+            else
+            {
+                byte[] bytes = new byte[buffer.remaining()];
+
+                int j = 0;
+                for (int i = buffer.position(); i < buffer.limit(); i++)
+                {
+                    bytes[j++] = buffer.get(i);
+                }
+
+                trans_.write(bytes);
+            }
+        }
     }
 }
