@@ -154,6 +154,12 @@ public class Message
                     return false;
                 }
 
+                if (frameSize > thriftFactories.maxFrameSizeInBytes)
+                {
+                    logger.error("Invalid frame size got (" + frameSize + "), maximum expected " + thriftFactories.maxFrameSizeInBytes);
+                    return false;
+                }
+
                 // reallocate to match frame size (if needed)
                 reallocateDataBuffer(frameSize);
 

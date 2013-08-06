@@ -27,15 +27,17 @@ public class ThriftFactories
     public final TTransportFactory inputTransportFactory, outputTransportFactory;
     public final TProtocolFactory  inputProtocolFactory,  outputProtocolFactory;
     public final TProcessorFactory processorFactory;
+    public final int maxFrameSizeInBytes;
 
     public ThriftFactories(TTransportFactory inputTransportFactory, TTransportFactory outputTransportFactory,
                            TProtocolFactory  inputProtocolFactory,  TProtocolFactory outputProtocolFactory,
-                           TProcessorFactory processorFactory)
+                           TProcessorFactory processorFactory, int maxFrameSizeInBytes)
     {
         this.inputTransportFactory = inputTransportFactory;
         this.outputTransportFactory = outputTransportFactory;
         this.inputProtocolFactory = inputProtocolFactory;
         this.outputProtocolFactory = outputProtocolFactory;
         this.processorFactory = processorFactory;
+        this.maxFrameSizeInBytes = maxFrameSizeInBytes;
     }
 }

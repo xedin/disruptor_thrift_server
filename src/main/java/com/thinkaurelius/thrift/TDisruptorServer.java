@@ -70,7 +70,7 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
 
     public static class Args extends AbstractNonblockingServer.AbstractNonblockingServerArgs<Args>
     {
-        private Integer numAcceptors, numSelectors, numWorkersPerSelector, ringSize;
+        private Integer numAcceptors, numSelectors, numWorkersPerSelector, ringSize, maxFrameSizeInBytes = 16384000;
         private boolean useHeapBasedAllocation;
 
         public Args(TNonblockingServerTransport transport)
@@ -110,6 +110,13 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
         public Args useHeapBasedAllocation(boolean flag)
         {
             this.useHeapBasedAllocation = flag;
+            return this;
+        }
+
+        @SuppressWarnings("unused")
+        public Args maxFrameSizeInBytes(int maxFrameSizeInBytes)
+        {
+            this.maxFrameSizeInBytes = maxFrameSizeInBytes;
             return this;
         }
     }
@@ -163,7 +170,8 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
 
         thriftFactories = new ThriftFactories(inputTransportFactory_, outputTransportFactory_,
                                               inputProtocolFactory_,  outputProtocolFactory_,
-                                              processorFactory_);
+                                              processorFactory_,
+                                              args.maxFrameSizeInBytes);
 
         try
         {
