@@ -17,7 +17,7 @@ Example for Maven:
 <dependency>
     <groupId>com.thinkaurelius.thrift</groupId>
     <artifactId>thrift-server</artifactId>
-    <version>0.1</version>
+    <version>0.3.0</version>
 </dependency>
 ```
 and for Ivy:
