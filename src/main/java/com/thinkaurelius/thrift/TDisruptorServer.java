@@ -18,8 +18,7 @@
  */
 package com.thinkaurelius.thrift;
 
-import javax.management.MBeanServer;
-import javax.management.ObjectName;
+import javax.management.*;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.nio.channels.CancelledKeyException;
@@ -271,6 +270,24 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
 
         for (SelectorThread selector : selectorThreads)
             selector.wakeupSelector();
+
+        unregisterMBean();
+    }
+
+    void unregisterMBean()
+    {
+        try
+        {
+            MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+            ObjectName nameObj = new ObjectName(MBEAN_NAME);
+
+            if (mbs.isRegistered(nameObj))
+                mbs.unregisterMBean(nameObj);
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
