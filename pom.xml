@@ -7,7 +7,7 @@
     </parent>
     <groupId>com.thinkaurelius.thrift</groupId>
     <artifactId>thrift-server</artifactId>
-    <version>0.3.2</version>
+    <version>0.3.3-SNAPSHOT</version>
     <packaging>jar</packaging>
     <prerequisites>
         <maven>2.2.1</maven>
