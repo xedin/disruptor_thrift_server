@@ -210,20 +210,37 @@ public class Message
     {
         assert state == State.WRITING;
 
+        boolean writeFailed = false;
+
         try
         {
-            if (response.writeFullyTo(transport) < 0)
+            if (response.streamTo(transport) < 0)
+            {
+                writeFailed = true;
                 return false;
+            }
+            else if (!response.isFullyStreamed())
+            {
+                // if socket couldn't accommodate whole write buffer,
+                // continue writing when we get next write signal.
+
+                switchToWrite();
+                return true;
+            }
         }
         catch (IOException e)
         {
-            logger.warn("Got an IOException during write!", e);
+            logger.error("Got an IOException during write!", e);
+            writeFailed = true;
             return false;
         }
         finally
         {
-            response.close();
+            if (writeFailed || response.isFullyStreamed())
+                response.close();
         }
+
+
 
         // we're done writing. Now we need to switch back to reading.
         switchToRead();

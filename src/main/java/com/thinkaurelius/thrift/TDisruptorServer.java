@@ -575,9 +575,9 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
     /**
      * Allows derived classes to react when a connection is closed.
      */
-    protected void beforeClose(Message buffer)
+    protected void beforeClose(@SuppressWarnings("unused") Message buffer)
     {
-        //NOP by default
+        // NOP by default
     }
 
     private static int nextPowerOfTwo(int v)

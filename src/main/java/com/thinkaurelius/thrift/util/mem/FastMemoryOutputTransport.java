@@ -33,6 +33,7 @@ public class FastMemoryOutputTransport extends TTransport
      * The number of bytes written.
      */
     protected int count;
+    protected int streamPos = 0;
 
     @Override
     public boolean isOpen()
@@ -97,7 +98,8 @@ public class FastMemoryOutputTransport extends TTransport
     }
 
     /**
-     * Write all accumulated content to the given transport.
+     * Start writing accumulated content to the given transport
+     * or continue from the previous stop point (this method is stateful).
      *
      * @param transport The transport to write contents into.
      *
@@ -105,9 +107,19 @@ public class FastMemoryOutputTransport extends TTransport
      *
      * @throws IOException on any I/O related error, such as socket disconnect.
      */
-    public int writeFullyTo(TNonblockingTransport transport) throws IOException
+    public int streamTo(TNonblockingTransport transport) throws IOException
     {
-        return buf.writeTo(transport, 0, count);
+        int bytesWritten = buf.writeTo(transport, streamPos, count - streamPos);
+        streamPos += bytesWritten;
+        return bytesWritten;
+    }
+
+    /**
+     * @return true if all of the data in current stream has been written to the
+     * transport via streamTo method, false otherwise.
+     */
+    public boolean isFullyStreamed() {
+        return (count - streamPos) == 0;
     }
 
     /**
