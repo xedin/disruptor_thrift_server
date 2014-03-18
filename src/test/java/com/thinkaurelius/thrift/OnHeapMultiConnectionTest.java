@@ -22,9 +22,16 @@ import org.junit.BeforeClass;
 
 public class OnHeapMultiConnectionTest extends AbstractMultiConnectionTest
 {
+    private final static int PORT = 9165;
+
     @BeforeClass
     public static void prepareTest() throws Exception
     {
-        prepareTest(true);
+        prepareTest(true, PORT);
+    }
+
+    @Override
+    public int getServerPort() {
+        return PORT;
     }
 }

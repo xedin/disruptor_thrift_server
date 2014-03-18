@@ -105,15 +105,20 @@ public class Message
 
     private FastMemoryOutputTransport response;
 
-    private final boolean useHeapBasedAllocation;
+    private final boolean useHeapBasedAllocation, alwaysReallocateBuffers;
 
-    public Message(TNonblockingTransport trans, SelectionKey key, ThriftFactories factories, boolean heapBasedAllocation)
+    public Message(TNonblockingTransport trans,
+                   SelectionKey key,
+                   ThriftFactories factories,
+                   boolean heapBasedAllocation,
+                   boolean reallocateBuffers)
     {
         frameSizeBuffer = Buffer.allocate(4, heapBasedAllocation);
         transport = trans;
         selectionKey = key;
         thriftFactories = factories;
         useHeapBasedAllocation = heapBasedAllocation;
+        alwaysReallocateBuffers = reallocateBuffers;
     }
 
     public boolean isReadyToRead()
@@ -403,13 +408,17 @@ public class Message
 
     private void reallocateDataBuffer(int newSize)
     {
-        if (dataBuffer != null && dataBuffer.size() != newSize)
+        if (shouldReallocateBuffer(newSize))
             freeDataBuffer();
 
         if (dataBuffer == null)
             dataBuffer = Buffer.allocate(newSize, useHeapBasedAllocation);
 
         dataBuffer.clear();
+    }
+
+    private boolean shouldReallocateBuffer(int newSize) {
+        return alwaysReallocateBuffers || (dataBuffer != null && dataBuffer.size() != newSize);
     }
 
     /**

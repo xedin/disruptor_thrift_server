@@ -37,13 +37,12 @@ import org.junit.AfterClass;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
-public class AbstractDisruptorTest
+public abstract class AbstractDisruptorTest
 {
     private static TServer TEST_SERVICE;
     private static final Random RANDOM = new Random();
 
     protected static final String HOST;
-    protected static final int SERVER_PORT = 9161;
 
     static
     {
@@ -57,9 +56,14 @@ public class AbstractDisruptorTest
         }
     }
 
-    public static void prepareTest(boolean onHeapBuffers) throws Exception
+    public static void prepareTest(boolean onHeapBuffers, int port) throws Exception
     {
-        final TNonblockingServerTransport socket = new TNonblockingServerSocket(new InetSocketAddress(HOST, SERVER_PORT));
+        prepareTest(onHeapBuffers, false, port);
+    }
+
+    public static void prepareTest(boolean onHeapBuffers, boolean shouldRellocateBuffers, int port) throws Exception
+    {
+        final TNonblockingServerTransport socket = new TNonblockingServerSocket(new InetSocketAddress(HOST, port));
         final TBinaryProtocol.Factory protocol = new TBinaryProtocol.Factory();
 
         TDisruptorServer.Args args = new TDisruptorServer.Args(socket)
@@ -68,7 +72,8 @@ public class AbstractDisruptorTest
                                                          .inputProtocolFactory(protocol)
                                                          .outputProtocolFactory(protocol)
                                                          .processor(new TestService.Processor<TestService.Iface>(new Service()))
-                                                         .useHeapBasedAllocation(onHeapBuffers);
+                                                         .useHeapBasedAllocation(onHeapBuffers)
+                                                         .alwaysReallocateBuffers(shouldRellocateBuffers);
 
         TEST_SERVICE = new CustomTDisruptorServer(args);
 
@@ -89,8 +94,10 @@ public class AbstractDisruptorTest
 
     protected TTransport getNewTransport() throws TTransportException
     {
-        return new TFramedTransport(new TSocket(HOST, SERVER_PORT));
+        return new TFramedTransport(new TSocket(HOST, getServerPort()));
     }
+
+    public abstract int getServerPort();
 
     protected TestService.Client getNewClient(TTransport transport) throws TTransportException
     {

@@ -70,7 +70,7 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
     public static class Args extends AbstractNonblockingServer.AbstractNonblockingServerArgs<Args>
     {
         private Integer numAcceptors, numSelectors, numWorkersPerSelector, ringSize, maxFrameSizeInBytes = 16384000;
-        private boolean useHeapBasedAllocation;
+        private boolean useHeapBasedAllocation, alwaysReallocateBuffers;
 
         public Args(TNonblockingServerTransport transport)
         {
@@ -118,6 +118,12 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
             this.maxFrameSizeInBytes = maxFrameSizeInBytes;
             return this;
         }
+
+        @SuppressWarnings("unused")
+        public Args alwaysReallocateBuffers(boolean flag) {
+            this.alwaysReallocateBuffers = flag;
+            return this;
+        }
     }
 
     private final AcceptorThread[] acceptorThreads;
@@ -126,7 +132,7 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
 
     private final ThriftFactories thriftFactories;
 
-    private volatile boolean useHeapBasedAllocation, isStopped;
+    private volatile boolean useHeapBasedAllocation, alwaysReallocateBuffers, isStopped;
 
     public TDisruptorServer(Args args)
     {
@@ -166,6 +172,7 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
         }
 
         useHeapBasedAllocation = args.useHeapBasedAllocation;
+        alwaysReallocateBuffers = args.alwaysReallocateBuffers;
 
         thriftFactories = new ThriftFactories(inputTransportFactory_, outputTransportFactory_,
                                               inputProtocolFactory_,  outputProtocolFactory_,
@@ -510,7 +517,7 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
             while ((newClient = newConnections.poll()) != null)
             {
                 SelectionKey clientKey = newClient.registerSelector(selector, SelectionKey.OP_READ);
-                clientKey.attach(new Message(newClient, clientKey, thriftFactories, useHeapBasedAllocation));
+                clientKey.attach(new Message(newClient, clientKey, thriftFactories, useHeapBasedAllocation, alwaysReallocateBuffers));
             }
         }
 

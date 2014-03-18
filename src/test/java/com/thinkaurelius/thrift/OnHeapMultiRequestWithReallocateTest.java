@@ -20,14 +20,14 @@ package com.thinkaurelius.thrift;
 
 import org.junit.BeforeClass;
 
-public class OffHeapMultiConnectionTest extends AbstractMultiConnectionTest
+public class OnHeapMultiRequestWithReallocateTest extends AbstractMultiRequestTest
 {
-    private final static int PORT = 9161;
+    private final static int PORT = 9168;
 
     @BeforeClass
     public static void prepareTest() throws Exception
     {
-        prepareTest(false, PORT);
+        prepareTest(true, true, PORT);
     }
 
     @Override
