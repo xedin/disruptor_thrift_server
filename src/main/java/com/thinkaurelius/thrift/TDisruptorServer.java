@@ -344,6 +344,9 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
             {
                 while (!isStopped())
                     select();
+                
+                for (SelectionKey key: selector.keys())
+                    cleanupSelectionKey(key);
 
                 selector.close();
             }
@@ -415,7 +418,10 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
             Message message = (Message) key.attachment();
 
             if (message != null)
+            {
+                beforeClose(message);
                 message.close();
+            }
 
             // cancel the selection key
             key.cancel();
