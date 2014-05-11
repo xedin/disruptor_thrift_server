@@ -23,7 +23,7 @@ Example for Maven:
 and for Ivy:
 
 ```xml
-<dependency org="com.thinkaurelius.thrift" name="thrift-server" rev="0.1" />
+<dependency org="com.thinkaurelius.thrift" name="thrift-server" rev="0.3.5" />
 ```
 
 ## Performance numbers

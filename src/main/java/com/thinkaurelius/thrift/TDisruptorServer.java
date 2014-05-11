@@ -70,7 +70,7 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
     public static class Args extends AbstractNonblockingServer.AbstractNonblockingServerArgs<Args>
     {
         private Integer numAcceptors, numSelectors, numWorkersPerSelector, ringSize, maxFrameSizeInBytes = 16384000;
-        private boolean useHeapBasedAllocation, alwaysReallocateBuffers;
+        private boolean useHeapBasedAllocation = true, alwaysReallocateBuffers = true;
 
         public Args(TNonblockingServerTransport transport)
         {
