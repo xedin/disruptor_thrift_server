@@ -26,9 +26,7 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.spi.SelectorProvider;
 import java.util.Iterator;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.*;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,6 +69,7 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
     {
         private Integer numAcceptors, numSelectors, numWorkersPerSelector, ringSize, maxFrameSizeInBytes = 16384000;
         private boolean useHeapBasedAllocation = true, alwaysReallocateBuffers = true;
+        private ThreadPoolExecutor invocationExecutor;
 
         public Args(TNonblockingServerTransport transport)
         {
@@ -122,6 +121,19 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
         @SuppressWarnings("unused")
         public Args alwaysReallocateBuffers(boolean flag) {
             this.alwaysReallocateBuffers = flag;
+            return this;
+        }
+
+        /**
+         * Executor if set takes precedence over numWorkersPerSelector.
+         *
+         * @param executor The executor to use for message execution.
+         *
+         * @return self.
+         */
+        @SuppressWarnings("unused")
+        public Args invocationExecutor(ThreadPoolExecutor executor) {
+            this.invocationExecutor = executor;
             return this;
         }
     }
@@ -191,12 +203,23 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
             throw new RuntimeException("Could not create acceptor threads", e);
         }
 
+        if (args.invocationExecutor != null)
+            logger.info(String.format("Going to use %s for all of the Selector threads..", args.invocationExecutor));
+
         try
         {
             selectorThreads = new SelectorThread[numSelectors];
 
             for (int i = 0; i < numSelectors; i++)
-                selectorThreads[i] = new SelectorThread("Thrift-Selector_" + i, nextPowerOfTwo(ringSize), numWorkersPerSelector);
+            {
+                ThreadPoolExecutor invoker = (args.invocationExecutor != null)
+                                              ? args.invocationExecutor
+                                              : new ThreadPoolExecutor(numWorkersPerSelector, numWorkersPerSelector,
+                                                                       0L, TimeUnit.MILLISECONDS,
+                                                                       new LinkedBlockingQueue<Runnable>());
+
+                selectorThreads[i] = new SelectorThread("Thrift-Selector_" + i, nextPowerOfTwo(ringSize), invoker);
+            }
         }
         catch (IOException e)
         {
@@ -481,13 +504,13 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
         /**
          * Set up the thread that will handle the non-blocking reads, and writes.
          */
-        public SelectorThread(String name, int ringSize, int numWorkers) throws IOException
+        public SelectorThread(String name, int ringSize, ThreadPoolExecutor invoker) throws IOException
         {
             super(name);
 
             this.newConnections = new ConcurrentLinkedQueue<>();
 
-            InvocationHandler handlers[] = new InvocationHandler[numWorkers];
+            InvocationHandler handlers[] = new InvocationHandler[invoker.getCorePoolSize()];
 
             for (int i = 0; i < handlers.length; i++)
                 handlers[i] = new InvocationHandler();
@@ -499,9 +522,7 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
              */
             ringBuffer = RingBuffer.createSingleProducer(Message.Invocation.FACTORY, ringSize, new BlockingWaitStrategy());
             workerPool = new WorkerPool<>(ringBuffer, ringBuffer.newBarrier(), new FatalExceptionHandler(), handlers);
-            workerPool.start((numWorkers == 1)
-                              ? Executors.newSingleThreadExecutor()
-                              : Executors.newFixedThreadPool(numWorkers));
+            workerPool.start(invoker);
         }
 
         @Override
