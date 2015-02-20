@@ -19,21 +19,19 @@
 package com.thinkaurelius.thrift;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 
-import org.apache.thrift.TException;
-import org.apache.thrift.protocol.TProtocol;
-import org.apache.thrift.transport.TNonblockingTransport;
-import org.apache.thrift.transport.TTransport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.lmax.disruptor.EventFactory;
-import com.thinkaurelius.thrift.util.ThriftFactories;
-import com.thinkaurelius.thrift.util.mem.Buffer;
 import com.thinkaurelius.thrift.util.mem.FastMemoryOutputTransport;
-import com.thinkaurelius.thrift.util.mem.TMemoryInputTransport;
+import com.thinkaurelius.thrift.util.mem.Buffer;
+import com.thinkaurelius.thrift.util.ThriftFactories;
+import org.apache.thrift.TException;
+import org.apache.thrift.protocol.TProtocol;
+import org.apache.thrift.transport.TNonblockingTransport;
+import org.apache.thrift.transport.TTransport;
 
 /**
  * Possible states for the Message state machine.
@@ -167,7 +165,6 @@ public class Message
                     return false;
                 }
 
-
                 // reallocate to match frame size (if needed)
                 reallocateDataBuffer(frameSize);
 
@@ -197,12 +194,6 @@ public class Message
             state = (dataBuffer.remaining() == 0)
                      ? State.READ_FRAME_COMPLETE
                      : State.READY_TO_READ_FRAME;
-
-            // Do not read until we finish processing request.
-            if (state == State.READ_FRAME_COMPLETE)
-            {
-                switchMode(State.READ_FRAME_COMPLETE);
-            }
 
             return true;
         }
@@ -297,9 +288,9 @@ public class Message
         {
             // go straight to reading again. this was probably an one way method
             switchToRead();
+
             // we can close response stream as it wouldn't be used and we want to reclaim resources
             response.close();
-
         }
         else
         {
@@ -397,10 +388,6 @@ public class Message
 
             case READY_TO_WRITE:
                 selectionKey.interestOps(SelectionKey.OP_WRITE);
-                break;
-
-            case READ_FRAME_COMPLETE:
-                selectionKey.interestOps(0);
                 break;
 
             default:
