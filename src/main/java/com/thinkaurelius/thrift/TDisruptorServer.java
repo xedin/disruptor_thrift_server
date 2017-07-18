@@ -339,7 +339,7 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
     {
         for (SelectorThread selector : selectorThreads)
         {
-            if (!selector.isStopped())
+            if (selector.selector.isOpen())
                 return false;
         }
 
@@ -369,10 +369,12 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
 
         }
 
-        public boolean isStopped()
-        {
-            return isStopped;
-        }
+        /**
+         * Must only be called within {@link AbstractSelectorThread#run()} and {@link AbstractSelectorThread#select()}.
+         *
+         * Returns true if the selector is stopped, false otherwise. Overriden in {@link AcceptorThread} and {@link SelectorThread}.
+         */
+        protected abstract boolean isStopped();
 
         @Override
         public void run()
@@ -459,6 +461,8 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
             {
                 beforeClose(message);
                 message.close();
+                // discard message
+                key.attach(null);
             }
 
             // cancel the selection key
@@ -520,6 +524,15 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
         protected void selectorIterationComplete() {
             // no post-processing is required
         }
+
+        /**
+         * Returns true if the enclosing {@link TDisruptorServer} is stopped.
+         */
+        @Override
+        protected boolean isStopped()
+        {
+            return isStopped;
+        }
     }
 
     protected class SelectorThread extends AbstractSelectorThread
@@ -558,10 +571,57 @@ public abstract class TDisruptorServer extends TNonblockingServer implements TDi
             workerPool.start(invoker);
         }
 
+        /**
+         * Must only be called in {@link AbstractSelectorThread#run()} and {@link AbstractSelectorThread#select()}. Overrides base
+         * implementation.
+         * <p>
+         * Checks whether this selector thread is stopped. It's stopped, and returns true, if the enclosing {@code TDisruptorServer}
+         * instance is stopped and:
+         * <ul>
+         * <li> this selector thread's {@code Selector} is closed, or
+         * <li> all of this selector thread's registered {@code Message}s are inactive
+         * </ul>
+         * <p>
+         * While checking the active state of messages, this method cleans up the selection key for inactive ones using
+         * {@link #cleanupSelectionKey(SelectionKey)}. This method return false as soon as an active message is found.
+         */
+        @Override
+        protected boolean isStopped()
+        {
+            if (!isStopped)
+            {
+                return false;
+            }
+            else if (!selector.isOpen())
+            {
+                // selector thread closes itself, this must be called after drain
+                return true;
+            }
+            // still in select loop
+            Iterator<SelectionKey> keys = selector.keys().iterator();
+
+            while(keys.hasNext())
+            {
+                SelectionKey key = keys.next();
+                Message message = (Message) key.attachment();
+                
+                if (message != null && message.isActive())
+                {
+                    return false;
+                }
+                // cleanup preemptively, key could still be in selected key set, but will be invalid
+                cleanupSelectionKey(key);
+            }
+            return true;
+        }
+
         @Override
         protected void processKey(SelectionKey key)
         {
             Message message = (Message) key.attachment();
+
+            if (message == null)
+                return;
 
             if (message.isReadyToRead())
                 handleRead(message);

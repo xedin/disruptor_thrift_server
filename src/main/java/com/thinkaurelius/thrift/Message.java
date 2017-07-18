@@ -19,7 +19,6 @@
 package com.thinkaurelius.thrift;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 
 import org.apache.thrift.TException;
@@ -33,7 +32,6 @@ import com.lmax.disruptor.EventFactory;
 import com.thinkaurelius.thrift.util.ThriftFactories;
 import com.thinkaurelius.thrift.util.mem.Buffer;
 import com.thinkaurelius.thrift.util.mem.FastMemoryOutputTransport;
-import com.thinkaurelius.thrift.util.mem.TMemoryInputTransport;
 
 /**
  * Possible states for the Message state machine.
@@ -131,6 +129,43 @@ public class Message
     public boolean isReadyToWrite()
     {
         return state == State.READY_TO_WRITE && selectionKey.isWritable();
+    }
+
+    /**
+     * A {@code Message} is considered active if it has already started 
+     * reading a frame, is being processed, or is writing the response.
+     * Returns true in those case, false otherwise.
+     *
+     * @return {@code true} if this message is reading, writing, or
+     * currently being processed, {@code false} otherwise
+     */
+    public boolean isActive()
+    {
+        /*
+         * Implementation detail: state is not volatile, but the selector
+         * thread does most transitions so we will always see a valid value.
+         * In the case of switchToWrite(), happens-before is established by
+         * the call to wakeup().
+         */
+        switch(state)
+        {
+            case AWAITING_CLOSE:
+                // will be cleaned up anyway
+            case READY_TO_READ_FRAME_SIZE:
+                // might have read 1-3 bytes of frame size, too bad
+                return false;
+
+            case READING_FRAME_SIZE:
+            case READY_TO_READ_FRAME:
+            case READING_FRAME:
+            case READ_FRAME_COMPLETE:
+            case READY_TO_WRITE:
+            case WRITING:
+                return true;
+
+            default : 
+                throw new IllegalStateException("No state matched.");
+        }
     }
 
     /**
